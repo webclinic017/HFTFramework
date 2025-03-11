@@ -2,18 +2,18 @@ package com.lambda.investing.algorithmic_trading.market_making.avellaneda_stoiko
 
 import com.lambda.investing.ArrayUtils;
 import com.lambda.investing.TimeSeriesQueue;
-import com.lambda.investing.algorithmic_trading.AlgorithmConnectorConfiguration;
-import com.lambda.investing.algorithmic_trading.AlgorithmState;
-import com.lambda.investing.algorithmic_trading.InstrumentManager;
-import com.lambda.investing.algorithmic_trading.TimeseriesUtils;
+import com.lambda.investing.algorithmic_trading.*;
 import com.lambda.investing.algorithmic_trading.market_making.MarketMakingAlgorithm;
 import com.lambda.investing.model.asset.Instrument;
 import com.lambda.investing.model.exception.LambdaTradingException;
 import com.lambda.investing.model.market_data.Depth;
 import com.lambda.investing.model.market_data.Trade;
 import com.lambda.investing.model.trading.*;
+import org.apache.curator.shaded.com.google.common.collect.EvictingQueue;
+import org.apache.curator.shaded.com.google.common.collect.Queues;
 
 import java.util.Map;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 
 
@@ -934,6 +934,10 @@ public class AvellanedaStoikov extends MarketMakingAlgorithm {
     @Override
     public boolean onExecutionReportUpdate(ExecutionReport executionReport) {
         boolean output = super.onExecutionReportUpdate(executionReport);
+        if (!instrument.getPrimaryKey().equals(executionReport.getInstrument())) {
+            logger.info("Hedge execution report {}", executionReport);
+            return output;
+        }
         if (executionReport.getExecutionReportStatus().equals(ExecutionReportStatus.CompletellyFilled)
                 || executionReport.getExecutionReportStatus().equals(ExecutionReportStatus.PartialFilled)) {
             logger.debug("trade arrived");

@@ -700,8 +700,10 @@ public class OrderMatchEngine extends OrderbookManager {
                                 executionReport.setExecutionReportStatus(ExecutionReportStatus.Active);
                                 //check price active if directly filled!
                                 executionReportMap.put(executionReport.getClientOrderId(), executionReport);
-                                activeHasBeenSent = true;
-                                notifyExecutionReport(executionReport);
+                                if(!activeHasBeenSent) {
+                                    activeHasBeenSent = true;
+                                    notifyExecutionReport(executionReport);
+                                }
 
                                 //send ER filled to counterparty
                                 double sizeRemainingAtThisLevel = fastOrder.qty - executionReport.getQuantityFill();

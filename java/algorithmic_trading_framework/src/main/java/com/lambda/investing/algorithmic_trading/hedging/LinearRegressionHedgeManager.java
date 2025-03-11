@@ -24,6 +24,8 @@ public class LinearRegressionHedgeManager implements HedgeManager {
     protected SyntheticInstrument syntheticInstrument;
     protected Set<Instrument> interestedInstruments = new HashSet<>();
     protected String syntheticInstrumentFile;
+    protected Map<String, Double> askMap = new ConcurrentHashMap<>();
+    protected Map<String, Double> bidMap = new ConcurrentHashMap<>();
 
     public LinearRegressionHedgeManager(Instrument instrument, String syntheticInstrumentFile) throws FileNotFoundException {
         this.instrument = instrument;
@@ -43,6 +45,8 @@ public class LinearRegressionHedgeManager implements HedgeManager {
 
     @Override
     public boolean onDepthUpdate(Depth depth) {
+        askMap.put(depth.getInstrument(), depth.getBestAsk());
+        bidMap.put(depth.getInstrument(), depth.getBestBid());
         return true;
     }
 
@@ -52,11 +56,23 @@ public class LinearRegressionHedgeManager implements HedgeManager {
     }
 
     protected void tradeSpread(Algorithm algorithm, Verb verbMain, double quantity) {
-        logger.info("hedge {} market order the spread on instrument {} with {} hedge instruments", verbMain, this.instrument,
-                this.syntheticInstrument.getInstruments().size());
         hedgeSyntheticInstrumentsMarket(algorithm, verbMain, quantity);
 
     }
+
+    private double getHedgeRatio(Verb verbMain, Instrument underlyingInstrument, double beta) {
+        Verb verbHedge = Verb.OtherSideVerb(verbMain);
+        double priceMain = verbMain == Verb.Buy ? askMap.get(instrument.getPrimaryKey()) : bidMap.get(instrument.getPrimaryKey());
+        double priceUnderlying = verbHedge == Verb.Buy ? askMap.get(underlyingInstrument.getPrimaryKey()) : bidMap.get(underlyingInstrument.getPrimaryKey());
+        if (beta < 0) {
+            priceUnderlying = verbHedge == Verb.Buy ? askMap.get(underlyingInstrument.getPrimaryKey()) : bidMap.get(underlyingInstrument.getPrimaryKey());
+        }
+        double hedgeRatio = beta * (priceMain / priceUnderlying);
+        return hedgeRatio;
+
+//        return (1 / beta);
+    }
+
 
     protected void hedgeSyntheticInstrumentsMarket(Algorithm algorithm, Verb verbMain, double quantityOnMain) {
         Verb verbHedge = Verb.OtherSideVerb(verbMain);
@@ -64,8 +80,8 @@ public class LinearRegressionHedgeManager implements HedgeManager {
         for (Instrument underlyingInstrument : this.syntheticInstrument.getInstruments()) {
             double beta = this.syntheticInstrument.getBeta(underlyingInstrument);
             OrderRequest orderRequestSynth = null;
-
-            double quantityTrade = Math.abs(quantityOnMain * (1 / beta));
+            double hedgeRatio = getHedgeRatio(verbMain, underlyingInstrument, beta);
+            double quantityTrade = Math.abs(quantityOnMain * hedgeRatio);
             quantityTrade = underlyingInstrument.roundQty(quantityTrade);
 
             if (beta == 0) {

@@ -3,8 +3,11 @@ package com.lambda.investing.algorithmic_trading;
 import com.lambda.investing.Configuration;
 import com.lambda.investing.algorithmic_trading.gui.main.MainMenuGUI;
 import com.lambda.investing.algorithmic_trading.hedging.LinearRegressionHedgeManager;
+import com.lambda.investing.algorithmic_trading.hedging.synthetic_portfolio.SyntheticInstrument;
 import com.lambda.investing.model.asset.Instrument;
 import com.lambda.investing.model.market_data.Depth;
+import com.lambda.investing.model.trading.ExecutionReport;
+import com.lambda.investing.model.trading.ExecutionReportStatus;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -12,11 +15,13 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.util.Map;
 
-@Getter @Setter public abstract class SingleInstrumentAlgorithm extends Algorithm {
+@Getter
+@Setter
+public abstract class SingleInstrumentAlgorithm extends Algorithm {
 
 	protected Instrument instrument;
 	protected boolean enableAutoHedger;
-
+	protected String syntheticInstrumentFile;
 	protected int minLevelsDepth = 0;//<0 means disable check
 	protected double minVolumeDepth = -5;//<0 means disable check
 	protected double maxVolumeDepth = -5;//<0 means disable check
@@ -41,17 +46,35 @@ import java.util.Map;
 
 		//configure autohedger
 		if (enableAutoHedger) {
-			String hedgePath = Configuration.OUTPUT_PATH + File.separator + String
-					.format("hedge_%s.json", getInstrument().getPrimaryKey());
-			try {
-				LinearRegressionHedgeManager hedgeManager = new LinearRegressionHedgeManager(this.instrument, hedgePath);
-				setHedgeManager(hedgeManager);
-			} catch (FileNotFoundException e) {
-				System.err.println(
-						"Error creating LinearRegressionHedgeManager looking for " + hedgePath + " disable AH");
-				logger.error("Error creating LinearRegressionHedgeManager looking for " + hedgePath + " disable AH");
+			String syntheticInstrumentPath = getSyntheticInstrumentPath();
+			if (syntheticInstrumentPath != null && !syntheticInstrumentPath.isEmpty()) {
+				try {
+					LinearRegressionHedgeManager hedgeManager = new LinearRegressionHedgeManager(this.instrument, syntheticInstrumentFile);
+					setHedgeManager(hedgeManager);
+					instruments.addAll(hedgeManager.getInstrumentsHedgeList());
+				} catch (FileNotFoundException e) {
+					System.err.println(
+							"Error creating LinearRegressionHedgeManager looking for " + syntheticInstrumentFile + " disable AH");
+					logger.error("Error creating LinearRegressionHedgeManager looking for " + syntheticInstrumentFile + " disable AH");
+				}
 			}
 		}
+
+	}
+
+	protected String getSyntheticInstrumentPath() {
+		String syntheticInstrumentPath = getParameterString(parameters, "syntheticInstrumentFile");
+		if (syntheticInstrumentPath != null && !isBacktest && !syntheticInstrumentPath.contains(":")) {
+			syntheticInstrumentPath = Configuration.INPUT_PATH + "\\" + syntheticInstrumentPath;
+		}
+		return syntheticInstrumentPath;
+	}
+
+	@Override
+	public void setParameters(Map<String, Object> parameters) {
+		super.setParameters(parameters);
+		enableAutoHedger = getParameterIntOrDefault(parameters, "enableAutoHedger", 0) == 1;
+		syntheticInstrumentFile = getParameterString(parameters, "syntheticInstrumentFile");
 
 	}
 
@@ -111,6 +134,24 @@ import java.util.Map;
 			return false;
 		}
 		return outputSuper;
+	}
+
+	@Override
+	public boolean onExecutionReportUpdate(ExecutionReport executionReport) {
+		boolean output = super.onExecutionReportUpdate(executionReport);
+		if (enableAutoHedger && hedgeManager != null) {
+			if (instrument.getPrimaryKey().equalsIgnoreCase(executionReport.getInstrument())) {
+				boolean isTrade = executionReport.getExecutionReportStatus().equals(ExecutionReportStatus.CompletellyFilled)
+						|| executionReport.getExecutionReportStatus().equals(ExecutionReportStatus.PartialFilled);
+
+				if (isTrade) {
+					hedgeManager.hedge(this, instrument, executionReport.getLastQuantity(), executionReport.getVerb());
+				}
+
+
+			}
+		}
+		return output;
 	}
 
 	@Override
