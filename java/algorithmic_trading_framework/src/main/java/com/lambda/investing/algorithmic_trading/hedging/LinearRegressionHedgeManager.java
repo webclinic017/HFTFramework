@@ -61,16 +61,8 @@ public class LinearRegressionHedgeManager implements HedgeManager {
     }
 
     private double getHedgeRatio(Verb verbMain, Instrument underlyingInstrument, double beta) {
-        Verb verbHedge = Verb.OtherSideVerb(verbMain);
-        double priceMain = verbMain == Verb.Buy ? askMap.get(instrument.getPrimaryKey()) : bidMap.get(instrument.getPrimaryKey());
-        double priceUnderlying = verbHedge == Verb.Buy ? askMap.get(underlyingInstrument.getPrimaryKey()) : bidMap.get(underlyingInstrument.getPrimaryKey());
-        if (beta < 0) {
-            priceUnderlying = verbHedge == Verb.Buy ? askMap.get(underlyingInstrument.getPrimaryKey()) : bidMap.get(underlyingInstrument.getPrimaryKey());
-        }
-        double hedgeRatio = beta * (priceMain / priceUnderlying);
-        return hedgeRatio;
+        return beta;
 
-//        return (1 / beta);
     }
 
 
