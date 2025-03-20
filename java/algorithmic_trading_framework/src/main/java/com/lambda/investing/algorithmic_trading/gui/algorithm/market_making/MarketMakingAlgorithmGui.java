@@ -4,11 +4,11 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.intellij.uiDesigner.core.GridConstraints;
 import com.intellij.uiDesigner.core.GridLayoutManager;
 import com.intellij.uiDesigner.core.Spacer;
-import com.lambda.investing.ArrayUtils;
 import com.lambda.investing.Configuration;
 import com.lambda.investing.algorithmic_trading.PnlSnapshot;
 import com.lambda.investing.algorithmic_trading.gui.algorithm.AlgorithmGui;
 import com.lambda.investing.algorithmic_trading.gui.algorithm.DepthTableModel;
+import com.lambda.investing.algorithmic_trading.gui.algorithm.arbitrage.statistical_arbitrage.StatisticalArbitrageAlgorithmGui;
 import com.lambda.investing.algorithmic_trading.gui.timeseries.TickTimeSeries;
 import com.lambda.investing.connector.ordinary.thread_pool.ThreadPoolExecutorChannels;
 import com.lambda.investing.market_data_connector.parquet_file_reader.ParquetMarketDataConnectorPublisher;
@@ -18,8 +18,8 @@ import com.lambda.investing.model.market_data.Trade;
 import com.lambda.investing.model.trading.ExecutionReport;
 import com.lambda.investing.model.trading.ExecutionReportStatus;
 import com.lambda.investing.model.trading.OrderRequest;
-import com.lambda.investing.model.trading.Verb;
 import lombok.Getter;
+import lombok.Setter;
 import org.apache.curator.shaded.com.google.common.collect.EvictingQueue;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -27,16 +27,16 @@ import org.jfree.chart.ChartTheme;
 
 import javax.swing.*;
 import javax.swing.event.ChangeEvent;
-import javax.swing.table.AbstractTableModel;
 import java.awt.*;
-import java.lang.reflect.Modifier;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.*;
 
 import static com.lambda.investing.ArrayUtils.ArrayReverse;
+import static com.lambda.investing.algorithmic_trading.AlgorithmParameters.getParameterString;
 import static com.lambda.investing.algorithmic_trading.gui.main.MainMenuGUI.IS_BACKTEST;
 import static com.lambda.investing.model.Util.toJsonString;
+import static com.lambda.investing.model.asset.Instrument.round;
 import static com.lambda.investing.model.trading.ExecutionReport.liveStatus;
 import static com.lambda.investing.model.trading.ExecutionReport.removedStatus;
 import static com.lambda.investing.trading_engine_connector.paper.market.OrderbookManager.MARKET_MAKER_ALGORITHM_INFO;
@@ -47,8 +47,19 @@ import static com.lambda.investing.trading_engine_connector.paper.market.Orderbo
  */
 @Getter
 public class MarketMakingAlgorithmGui implements AlgorithmGui {
+    @Getter
+    @Setter
+    private class DepthModel {
+        DepthTableModel depthTableModel;
+        JTable orderbookDepth;
+    }
+
     private Logger logger = LogManager.getLogger(MarketMakingAlgorithmGui.class);
-    private DepthTableModel depthTable;
+    private ConcurrentMap<String, DepthModel> depthTables;
+
+    private Map<String, PnlSnapshot> lastPnlSnapshot;
+    private double lastRealizedPnl = 0.0;
+    private double lastUnrealizedPnl = 0.0;
 
     private JTable orderbookDepth;
     private JEditorPane pnlSnapshotUpdates;
@@ -62,6 +73,8 @@ public class MarketMakingAlgorithmGui implements AlgorithmGui {
     private JEditorPane parametersText;
     private JSlider speedSlider;
     private JLabel SpeedText;
+    private JTabbedPane depthTabs;
+    private JPanel tab1;
     private Queue<Trade> tradesReceived = EvictingQueue.create(8);
     private Queue<Map<String, Object>> paramsUpdateReceived = EvictingQueue.create(8);
 
@@ -70,7 +83,7 @@ public class MarketMakingAlgorithmGui implements AlgorithmGui {
     private TickTimeSeries positionTimeSeries;
 
     private static final long MARKET_DATA_MIN_TIME_MS = 500;
-    private PnlSnapshot lastPnlSnapshot;
+
 
     private ThreadPoolExecutorChannels guiThreadPoolBuffered;
     private ThreadPoolExecutorChannels guiThreadPool;
@@ -81,9 +94,8 @@ public class MarketMakingAlgorithmGui implements AlgorithmGui {
     private long lastUpdatePnlSnapshot = 0L;
 
     public MarketMakingAlgorithmGui(ChartTheme theme, Instrument instrument) {
-
-        depthTable = new DepthTableModel();
-        orderbookDepth.setModel(depthTable);
+        depthTables = new ConcurrentHashMap<>();
+        lastPnlSnapshot = new HashMap<>();
 
         marketDataTimeSeries = new TickTimeSeries(theme, marketDataPanelTick, "Best Bid/Ask", "Date", "Price");
         pnlTimeSeries = new TickTimeSeries(theme, pnlPanelTick, "Profit & Loss", "Date", "PnL");
@@ -92,7 +104,15 @@ public class MarketMakingAlgorithmGui implements AlgorithmGui {
         initializeSpeedSlider();
         updatePnlSnapshot(new PnlSnapshot());//initial update
 
+        depthTabs.remove(0);//remove na tab
+    }
 
+    private void initializeDepthTable(String instrument) {
+        DepthModel model = new DepthModel();
+        model.depthTableModel = new DepthTableModel();
+        model.orderbookDepth = new JTable(model.depthTableModel);
+        depthTables.put(instrument, model);
+        depthTabs.add(instrument, model.orderbookDepth);
     }
 
 
@@ -177,9 +197,14 @@ public class MarketMakingAlgorithmGui implements AlgorithmGui {
         try {
             lastUpdateTimestamp = Math.max(depth.getTimestamp(), lastUpdateTimestamp);
             boolean updateTimeSeries = MARKET_DATA_MIN_TIME_MS > 0 && (depth.getTimestamp() - marketDataTimeSeries.getLastTimestamp()) > MARKET_DATA_MIN_TIME_MS;
+            if (!depthTables.containsKey(depth.getInstrument())) {
+                initializeDepthTable(depth.getInstrument());
+            }
+
             Runnable runnable = new Runnable() {
                 public void run() {
                     //update orderbook table
+                    DepthTableModel depthTable = depthTables.get(depth.getInstrument()).depthTableModel;
                     depthTable.updateDepth(depth);
                     //update timeseries tab
 
@@ -188,9 +213,7 @@ public class MarketMakingAlgorithmGui implements AlgorithmGui {
 
                     boolean refreshPnl = depth.getTimestamp() - lastUpdatePnlSnapshot > TIMEOUT_UPDATE_PORTFOLIO_SECONDS * 1000;
                     if (refreshPnl) {
-                        pnlTimeSeries.updateTimeSerie("Unrealized Pnl", depth.getTimestamp(), lastPnlSnapshot.getTotalPnl());
-                        pnlTimeSeries.updateTimeSerie("Realized Pnl", depth.getTimestamp(), lastPnlSnapshot.getRealizedPnl());
-                        positionTimeSeries.updateTimeSerie("position", depth.getTimestamp(), lastPnlSnapshot.getNetPosition());
+                        updatePnlTimeSerie(depth.getTimestamp());
                         lastUpdatePnlSnapshot = depth.getTimestamp();
                     }
 
@@ -220,6 +243,7 @@ public class MarketMakingAlgorithmGui implements AlgorithmGui {
                 Runnable runnable = new Runnable() {
                     public void run() {
                         //update table
+                        DepthTableModel depthTable = depthTables.get(executionReport.getInstrument()).depthTableModel;
                         depthTable.updateExecutionReport(executionReport);
 
                         //TODO something faster
@@ -255,37 +279,72 @@ public class MarketMakingAlgorithmGui implements AlgorithmGui {
 
     }
 
+    private void updatePnlTimeSerie(long timestamp) {
+        double unrealizedPnl = 0.0;
+        double realizedPnl = 0.0;
+        double fees = 0.0;
+        int trades = 0;
+        StringBuffer textInstrument = new StringBuffer();
+        for (Map.Entry<String, PnlSnapshot> entry : lastPnlSnapshot.entrySet()) {
+            String instrumentPk = entry.getKey();
+            if (instrumentPk == null) {
+                continue;
+            }
+
+            PnlSnapshot pnlSnapshot1 = entry.getValue();
+            textInstrument.append(formatPnlSnapshot(pnlSnapshot1));
+            textInstrument.append("\n");
+            unrealizedPnl += pnlSnapshot1.getTotalPnl();
+            realizedPnl += pnlSnapshot1.getRealizedPnl();
+            fees += pnlSnapshot1.getTotalFees();
+            trades += pnlSnapshot1.getNumberOfTrades().get();
+
+
+            positionTimeSeries.updateTimeSerie("position " + instrumentPk, timestamp, pnlSnapshot1.getNetPosition());
+            lastUpdatePnlSnapshot = Math.max(lastUpdatePnlSnapshot, timestamp);
+        }
+        textInstrument.append("Total Unrealized Pnl: " + round(unrealizedPnl, 2) + "\n");
+        textInstrument.append("Total Realized Pnl: " + round(realizedPnl, 2) + "\n");
+        textInstrument.append("Total Fees: " + round(fees, 2) + "\n");
+        textInstrument.append("Trades: " + trades + "\n");
+
+        pnlSnapshotUpdates.setText(textInstrument.toString());
+        pnlTimeSeries.updateTimeSerie("Total Unrealized Pnl", timestamp, unrealizedPnl);
+        pnlTimeSeries.updateTimeSerie("Total Realized Pnl", timestamp, realizedPnl);
+    }
 
     public void updatePnlSnapshot(PnlSnapshot pnlSnapshot) {
         lastUpdateTimestamp = Math.max(pnlSnapshot.getLastTimestampUpdate(), lastUpdateTimestamp);
-        lastPnlSnapshot = pnlSnapshot;
+        String instrumentPk = pnlSnapshot.getInstrumentPk();
+        lastPnlSnapshot.put(instrumentPk, pnlSnapshot);
         Runnable runnable = new Runnable() {
             public void run() {
-
-                pnlSnapshotUpdates.setText(formatPnlSnapshot(lastPnlSnapshot));
-
-                pnlTimeSeries.updateTimeSerie("Unrealized Pnl", lastPnlSnapshot.getLastTimestampUpdate(), lastPnlSnapshot.getTotalPnl());
-                pnlTimeSeries.updateTimeSerie("Realized Pnl", lastPnlSnapshot.getLastTimestampUpdate(), lastPnlSnapshot.getRealizedPnl());
-                positionTimeSeries.updateTimeSerie("position", lastPnlSnapshot.getLastTimestampUpdate(), lastPnlSnapshot.getNetPosition());
-                lastUpdatePnlSnapshot = lastPnlSnapshot.getLastTimestampUpdate();
+                updatePnlTimeSerie(lastUpdateTimestamp);
             }
         };
         updateGUI(runnable);
 
     }
 
+
     private String formatPnlSnapshot(PnlSnapshot pnlSnapshot) {
         String output = Configuration.formatLog("" +
-                        "LastUpdate:{}\n" +
-                        "Unrealized Pnl: {}\n" +
-                        "Realized Pnl: {}\n" +
-                        "Position: {}\n" +
-                        "Last :{} {}@{}" +
+                        "{}\n" +
+                        "\tLastUpdate:{}\n" +
+                        "\tTrades: {}\n" +
+                        "\tUnrealized Pnl: {}\n" +
+                        "\tRealized Pnl: {}\n" +
+                        "\tFees: {}\n" +
+                        "\tPosition: {}\n" +
+                        "\tLast :{} {}@{}" +
                         "",
+                pnlSnapshot.getInstrumentPk(),
                 new Date(pnlSnapshot.getLastTimestampUpdate()).toString(),
-                pnlSnapshot.getTotalPnl(),
-                pnlSnapshot.getRealizedPnl(),
-                pnlSnapshot.getNetPosition(),
+                pnlSnapshot.getNumberOfTrades(),
+                round(pnlSnapshot.getTotalPnl(), 2),
+                round(pnlSnapshot.getRealizedPnl(), 2),
+                round(pnlSnapshot.getTotalFees(), 2),
+                round(pnlSnapshot.getNetPosition(), 4),
                 pnlSnapshot.getLastVerb(),
                 pnlSnapshot.getLastQuantity(),
                 pnlSnapshot.getLastPrice()
@@ -293,7 +352,6 @@ public class MarketMakingAlgorithmGui implements AlgorithmGui {
         );
         return output;
     }
-
 
     public void updateTrade(Trade trade) {
         lastUpdateTimestamp = Math.max(trade.getTimestamp(), lastUpdateTimestamp);
@@ -380,65 +438,64 @@ public class MarketMakingAlgorithmGui implements AlgorithmGui {
      */
     private void $$$setupUI$$$() {
         panel = new JPanel();
-        panel.setLayout(new GridLayoutManager(13, 3, new Insets(0, 0, 0, 0), -1, -1));
+        panel.setLayout(new GridLayoutManager(14, 3, new Insets(0, 0, 0, 0), -1, -1));
         marketDataPanelTick = new JPanel();
         marketDataPanelTick.setLayout(new GridLayoutManager(1, 1, new Insets(0, 0, 0, 0), -1, -1));
-        panel.add(marketDataPanelTick, new GridConstraints(9, 0, 4, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, null, new Dimension(700, 500), null, 0, false));
+        panel.add(marketDataPanelTick, new GridConstraints(10, 0, 4, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, null, new Dimension(700, 500), null, 0, false));
         final JScrollPane scrollPane1 = new JScrollPane();
         marketDataPanelTick.add(scrollPane1, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_WANT_GROW, null, null, null, 0, false));
         final Spacer spacer1 = new Spacer();
-        panel.add(spacer1, new GridConstraints(11, 2, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_WANT_GROW, 1, null, null, null, 0, false));
+        panel.add(spacer1, new GridConstraints(12, 2, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_WANT_GROW, 1, null, null, null, 0, false));
         pnlPanelTick = new JPanel();
         pnlPanelTick.setLayout(new GridLayoutManager(1, 1, new Insets(0, 0, 0, 0), -1, -1));
-        panel.add(pnlPanelTick, new GridConstraints(10, 2, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_WANT_GROW, null, new Dimension(324, 462), null, 0, false));
+        panel.add(pnlPanelTick, new GridConstraints(11, 2, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_WANT_GROW, null, new Dimension(324, 462), null, 0, false));
         final Spacer spacer2 = new Spacer();
-        panel.add(spacer2, new GridConstraints(9, 2, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_WANT_GROW, 1, null, null, null, 0, false));
+        panel.add(spacer2, new GridConstraints(10, 2, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_WANT_GROW, 1, null, null, null, 0, false));
         positionPanelTick = new JPanel();
-        positionPanelTick.setLayout(new GridLayoutManager(1, 1, new Insets(0, 0, 0, 0), -1, -1));
-        panel.add(positionPanelTick, new GridConstraints(12, 2, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_WANT_GROW, null, new Dimension(324, 462), null, 0, false));
-        final JScrollPane scrollPane2 = new JScrollPane();
-        panel.add(scrollPane2, new GridConstraints(1, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_WANT_GROW, null, new Dimension(700, 268), null, 0, false));
-        orderbookDepth = new JTable();
-        orderbookDepth.setShowVerticalLines(false);
-        scrollPane2.setViewportView(orderbookDepth);
+        positionPanelTick.setLayout(new GridLayoutManager(2, 2, new Insets(0, 0, 0, 0), -1, -1));
+        panel.add(positionPanelTick, new GridConstraints(13, 2, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_WANT_GROW, null, new Dimension(324, 462), null, 0, false));
         final Spacer spacer3 = new Spacer();
-        panel.add(spacer3, new GridConstraints(1, 1, 12, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_VERTICAL, 1, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+        positionPanelTick.add(spacer3, new GridConstraints(0, 1, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_WANT_GROW, 1, null, null, null, 0, false));
         final Spacer spacer4 = new Spacer();
-        panel.add(spacer4, new GridConstraints(8, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_WANT_GROW, 1, null, null, null, 0, false));
+        positionPanelTick.add(spacer4, new GridConstraints(1, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_VERTICAL, 1, GridConstraints.SIZEPOLICY_WANT_GROW, null, null, null, 0, false));
+        final Spacer spacer5 = new Spacer();
+        panel.add(spacer5, new GridConstraints(2, 1, 12, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_VERTICAL, 1, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+        final Spacer spacer6 = new Spacer();
+        panel.add(spacer6, new GridConstraints(9, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_WANT_GROW, 1, null, null, null, 0, false));
         pnlSnapshotUpdatesPanel = new JPanel();
         pnlSnapshotUpdatesPanel.setLayout(new GridLayoutManager(2, 1, new Insets(0, 0, 0, 0), -1, -1));
-        panel.add(pnlSnapshotUpdatesPanel, new GridConstraints(1, 2, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, null, null, null, 0, false));
+        panel.add(pnlSnapshotUpdatesPanel, new GridConstraints(2, 2, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, null, null, null, 0, false));
         pnlSnapshotUpdates = new JEditorPane();
         pnlSnapshotUpdates.setText("Portfolio");
         pnlSnapshotUpdatesPanel.add(pnlSnapshotUpdates, new GridConstraints(1, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_WANT_GROW, null, new Dimension(324, 100), null, 0, false));
         final JLabel label1 = new JLabel();
         label1.setText("Portfolio");
         pnlSnapshotUpdatesPanel.add(label1, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
-        final Spacer spacer5 = new Spacer();
-        panel.add(spacer5, new GridConstraints(2, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_WANT_GROW, 1, null, null, null, 0, false));
+        final Spacer spacer7 = new Spacer();
+        panel.add(spacer7, new GridConstraints(3, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_WANT_GROW, 1, null, null, null, 0, false));
         final JPanel panel1 = new JPanel();
         panel1.setLayout(new GridLayoutManager(1, 1, new Insets(0, 0, 0, 0), -1, -1));
-        panel.add(panel1, new GridConstraints(7, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, 1, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_WANT_GROW, null, null, null, 0, false));
-        final JScrollPane scrollPane3 = new JScrollPane();
-        scrollPane3.setHorizontalScrollBarPolicy(31);
-        scrollPane3.setVerticalScrollBarPolicy(21);
-        panel1.add(scrollPane3, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, 1, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_WANT_GROW, null, null, null, 0, false));
+        panel.add(panel1, new GridConstraints(8, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, 1, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_WANT_GROW, null, null, null, 0, false));
+        final JScrollPane scrollPane2 = new JScrollPane();
+        scrollPane2.setHorizontalScrollBarPolicy(31);
+        scrollPane2.setVerticalScrollBarPolicy(21);
+        panel1.add(scrollPane2, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, 1, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_WANT_GROW, null, null, null, 0, false));
         lastTradesText = new JEditorPane();
         lastTradesText.setEditable(false);
-        scrollPane3.setViewportView(lastTradesText);
+        scrollPane2.setViewportView(lastTradesText);
         Trades = new JLabel();
         Trades.setText("Trades");
-        panel.add(Trades, new GridConstraints(4, 0, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+        panel.add(Trades, new GridConstraints(5, 0, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
         final JLabel label2 = new JLabel();
         label2.setText("Depth");
         panel.add(label2, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
-        final Spacer spacer6 = new Spacer();
-        panel.add(spacer6, new GridConstraints(3, 2, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_WANT_GROW, 1, null, null, null, 0, false));
+        final Spacer spacer8 = new Spacer();
+        panel.add(spacer8, new GridConstraints(4, 2, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_WANT_GROW, 1, null, null, null, 0, false));
         final JLabel label3 = new JLabel();
         label3.setText("Parameters");
-        panel.add(label3, new GridConstraints(4, 2, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+        panel.add(label3, new GridConstraints(5, 2, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
         parametersText = new JEditorPane();
-        panel.add(parametersText, new GridConstraints(7, 2, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_WANT_GROW, null, new Dimension(150, 50), null, 0, false));
+        panel.add(parametersText, new GridConstraints(8, 2, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_WANT_GROW, null, new Dimension(150, 50), null, 0, false));
         final JPanel panel2 = new JPanel();
         panel2.setLayout(new GridLayoutManager(2, 1, new Insets(0, 0, 0, 0), -1, -1));
         panel.add(panel2, new GridConstraints(0, 2, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, null, null, null, 0, false));
@@ -448,6 +505,16 @@ public class MarketMakingAlgorithmGui implements AlgorithmGui {
         SpeedText = new JLabel();
         SpeedText.setText("Speed: max");
         panel2.add(SpeedText, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+        depthTabs = new JTabbedPane();
+        panel.add(depthTabs, new GridConstraints(1, 0, 2, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, null, new Dimension(200, 200), null, 0, false));
+        tab1 = new JPanel();
+        tab1.setLayout(new GridLayoutManager(1, 1, new Insets(0, 0, 0, 0), -1, -1));
+        depthTabs.addTab("Untitled", tab1);
+        final JScrollPane scrollPane3 = new JScrollPane();
+        tab1.add(scrollPane3, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, null, null, null, 0, false));
+        orderbookDepth = new JTable();
+        orderbookDepth.setShowVerticalLines(false);
+        scrollPane3.setViewportView(orderbookDepth);
     }
 
     /**
