@@ -38,7 +38,6 @@ associated risks.**
     * [Java projects](docs/java_projects.md)
     * [Reinforcement learning](docs/reinforcement_learning.md)
     * [Configuration](docs/json_config.md)
-      * [Cuda install](docs/cuda_install.md)
     * [I owe you one](#i-owe-you-one)
     * [TODO](#todo)
 * [Alpha-Avellaneda](docs/alpha_as.md)
