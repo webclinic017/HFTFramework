@@ -6,7 +6,7 @@ parameters of the Avellaneda
 Stoikov model, taking into account both market and private states.
 
 * [Java](../java/trading_algorithms/src/main/java/com/lambda/investing/algorithmic_trading/market_making/avellaneda_stoikov/AlphaAvellanedaStoikov.java)
-* [Python](../python/trading_algorithms/market_making/alpha_avellaneda_stoikov.py)
+* [Python](../python_lambda/trading_algorithms/market_making/alpha_avellaneda_stoikov.py)
 
 ![Alpha AS](../fig/AlphaAS_functional.jpg?raw=true "Alpha AS")
 
@@ -25,11 +25,9 @@ advantages:
 5. Potential for Improved Performance: The combination of the Avellaneda Stoikov model with RL has the potential to
    outperform traditional market making strategies, as demonstrated in academic research.
 6. Flexibility: The RL can be trained with different types of algorithms (like DQN, PPO, etc.), providing flexibility in
-   choosing the most suitable one for the specific market conditions and trading objectives.<br>
-
-[Notebook](../python/notebooks/AlphaAvellanedaStoikov.ipynb)
+   choosing the most suitable one for the specific market conditions and trading objectives.
 
 ### Avellaneda Stoikov implementation
 
 * [Java](../java/trading_algorithms/src/main/java/com/lambda/investing/algorithmic_trading/market_making/avellaneda_stoikov/AvellanedaStoikov.java)
-* [Python](../python/trading_algorithms/market_making/avellaneda_stoikov.py)
+* [Python](../python_lambda/trading_algorithms/market_making/avellaneda_stoikov.py)
