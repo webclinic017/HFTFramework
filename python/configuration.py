@@ -4,7 +4,6 @@ import time
 
 import platform
 
-
 operative_system = platform.system().lower()  # windows or unix?
 
 PROJECT_PATH = pathlib.Path(__file__).parent.absolute()
@@ -25,12 +24,16 @@ DEGIRO_USER = os.getenv(key='DEGIRO_USER', default="TEST")
 
 DEGIRO_PASSWORD = os.getenv(key='DEGIRO_PASSWORD', default="TEST")
 
+DEGIRO_TOPT_SECRET = os.getenv(key='DEGIRO_TOPT_SECRET', default=None)
+
 SHARPE_BACKTEST_FREQ = (
-    '5S'  # equity curve group by this and last , returns and group by this and sum
+    '10s'  # equity curve group by this and last , returns and group by this and sum
 )
+DEFAULT_CANDLES_NUM_UNITS = [60, 120, 180, 300, 600, 1800]
 
 # USE_IPC_RL_TRAINING
 USE_IPC_RL_TRAINING = os.getenv(key='USE_IPC_RL_TRAINING', default=False)
+
 
 def get_reinforcement_learning_framework():
     from trading_algorithms.reinforcement_learning.core.core_rl_algorithm import (
@@ -97,6 +100,7 @@ if not we_are_initialized:
     print("log_path(LAMBDA_LOGS_PATH)=%s" % log_path)
     print("LAMBDA_DATA_PATH=%s" % LAMBDA_DATA_PATH)
 
+
     def create_application_properties():
         dict_write = {}
         dict_write['temp.path'] = LAMBDA_TEMP_PATH
@@ -113,6 +117,7 @@ if not we_are_initialized:
 
         with open("application.properties", "w") as text_file:
             text_file.write(output)
+
 
     create_application_properties()
 # %% LOGGER
@@ -151,7 +156,7 @@ def get_logger(framework_name="python_lambda", print_on_console: bool = False):
     if framework_name in loggers.keys():
         return loggers[framework_name]
 
-    level = logging.DEBUG
+    level = logging.INFO
     formatLog = " %(asctime)s -[%(filename)s:%(lineno)s - %(funcName)20s() ] %(levelname)s - %(message)s"
 
     logger = logging.getLogger(framework_name)
@@ -164,7 +169,7 @@ def get_logger(framework_name="python_lambda", print_on_console: bool = False):
     )
     log_complete_path = log_path + os.sep + log_name
     handler = logging.FileHandler(log_complete_path)
-    handler.setLevel(logging.DEBUG)
+    handler.setLevel(logging.INFO)
 
     # create a logging format
     formatter = logging.Formatter(formatLog)

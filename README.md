@@ -38,6 +38,7 @@ associated risks.**
     * [Java projects](docs/java_projects.md)
     * [Reinforcement learning](docs/reinforcement_learning.md)
     * [Configuration](docs/json_config.md)
+      * [Cuda install](docs/cuda_install.md)
     * [I owe you one](#i-owe-you-one)
     * [TODO](#todo)
 * [Alpha-Avellaneda](docs/alpha_as.md)
@@ -48,8 +49,11 @@ associated risks.**
 ## How-to use
 
 ![Ui](fig/UI.jpg?raw=true "UI")
-
+[LLM Documentation](java/docs/Index.md)
 ### 1. Create algorithm and backtest
+[ALGORITHM_DOCUMENTATION.md](java/docs/ALGORITHM_DOCUMENTATION.md)
+[BACKTEST_DOCUMENTATION.md](java/docs/BACKTEST_DOCUMENTATION.md)
+[MARKET_MAKING_ALGORITHMS_DOCUMENTATION.md](java/docs/MARKET_MAKING_ALGORITHMS_DOCUMENTATION.md)
 
 In this instance, we execute a backtest for the Java
 strategies [ConstantSpread](java/trading_algorithms/src/main/java/com/lambda/investing/algorithmic_trading/market_making/constant_spread/ConstantSpreadAlgorithm.java)
@@ -158,11 +162,11 @@ metatrader.pull.port=32768
 
 ### Backtest
 
-![Backtest Architecture](fig/BacktestArquitecture.jpg?raw=true "Backtest")
+![Backtest Architecture](fig/BacktestArquitecture.JPG?raw=true "Backtest")
 
 ### Live trading
 
-![Live Architecture](fig/LiveArquitecture.jpg?raw=true "Live trading")
+![Live Architecture](fig/LiveArquitecture.JPG?raw=true "Live trading")
 
 ## Environment settings
 
@@ -172,6 +176,7 @@ metatrader.pull.port=32768
 * LAMBDA_LOGS_PATH = where we are going to save the logs
 
 #### Optional
+
 * LAMBDA_PYTHON_PATH = Folder where python source code is,used in scripts( .../HFTFramework/python)
 * LAMBDA_OUTPUT_PATH = base path where the ml models will be saved
 * LAMBDA_INPUT_PATH = base path where the configuration of algorithms will be read automatically
@@ -205,7 +210,10 @@ metatrader.pull.port=32768
 * Add more algorithms
 * Add more tests
 * Add more documentation
-* ...
+* ....
+
+### [Java documentation reference](/java/docs/Index.md)
+
 
 ### Reference
 

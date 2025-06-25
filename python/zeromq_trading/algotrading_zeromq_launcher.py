@@ -153,10 +153,10 @@ class AlgoTradingZeroMqLauncher:
                 RlAlgorithmParameters.action_type,
                 ReinforcementLearningActionType.continuous,
             )
-            return algorithm_name, rl_host, rl_port, base_model
+            return algorithm_name, rl_host, rl_port, base_model, reinforcement_learning_action_type
         except Exception as e:
             print(f"not the right json format on {self.algorithm_settings_path}")
-        return "", "", -1, ""
+        return "", "", -1, "", ""
 
     def run(self):
         if (
@@ -211,15 +211,19 @@ class AutomaticStartZeroMqTrading:
                 f"AutomaticStartZeroMqTrading going to launch {len(configuration_files_filtered)} processes"
             )
             for configuration_file in configuration_files_filtered:
-                if self.vm_options is None:
-                    launcher = AlgoTradingZeroMqLauncher(
-                        algorithm_settings_path=configuration_file
-                    )
-                else:
-                    launcher = AlgoTradingZeroMqLauncher(
-                        algorithm_settings_path=configuration_file,
-                        jvm_options=self.vm_options,
-                    )
+                try:
+                    if self.vm_options is None:
+                        launcher = AlgoTradingZeroMqLauncher(
+                            algorithm_settings_path=configuration_file
+                        )
+                    else:
+                        launcher = AlgoTradingZeroMqLauncher(
+                            algorithm_settings_path=configuration_file,
+                            jvm_options=self.vm_options,
+                        )
+                except Exception as e:
+                    print(f"error launching {configuration_file} -> {e}\n{e.__traceback__}")
+                    continue
                 self.algo_trading_processes.append(launcher)
                 launcher.run()
 

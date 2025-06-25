@@ -205,6 +205,36 @@ def get_asymetric_dampened_reward(trade_df: pd.DataFrame):
     return trade_df['asymmetric_dampened_pnl'].iloc[-1]
 
 
+def get_ratio_dict_from_equity(equity_curve) -> dict:
+    output_dict = {}
+    output_dict['max_drawdown'] = get_max_drawdown(equity_curve)
+    output_dict['max_drawdown_pct'] = get_max_drawdown_pct(equity_curve)
+    returns = equity_curve.diff().replace([0.0, np.nan, np.inf, -np.inf], np.nan).dropna()
+    MDD_start, MDD_end, time_difference, drawdown, UW_dt, UW_duration = get_max_drawdowns(returns)
+    output_dict['max_drawdown_days'] = time_difference.days
+    output_dict['max_drawdown_start'] = MDD_start
+    output_dict['max_drawdown_end'] = MDD_end
+
+    output_dict['sharpe_total'] = get_sharpe(equity_curve)
+    output_dict['sharpe_annualized'] = output_dict['sharpe_total'] * np.sqrt(252)
+    output_dict['sortino_total'] = get_sortino(equity_curve)
+    output_dict['sortino_annualized'] = output_dict['sortino_total'] * np.sqrt(252)
+
+    output_dict['returns_total'] = equity_curve.iloc[-1]
+    years = (equity_curve.index[-1] - equity_curve.index[0]).days / 252
+    output_dict['returns_annualized'] = output_dict['returns_total'] / years
+
+    output_dict['std_returns_total'] = returns.std()
+    output_dict['std_returns_annualized'] = returns.std() * np.sqrt(252)
+
+    return output_dict
+
+
+def get_ratio_dict_from_equity_from_returns(returns) -> dict:
+    equity_curve = returns.cumsum()
+    return get_ratio_dict_from_equity(equity_curve)
+
+
 def get_max_drawdowns(backtest_returns):
     equity_curve = backtest_returns.cumsum()
     i = np.argmax(
@@ -261,7 +291,6 @@ def get_drawdown(equity_curve: pd.Series) -> pd.Series:
 
 
 def get_sortino(equity_curve: pd.Series, rfr=0.0, target=0.0) -> float:
-
     # rfr = 0
     # target = 0
     df = equity_curve.diff().to_frame('Returns')
@@ -382,7 +411,9 @@ def get_backtest_df_date_indexed(backtest_df: pd.DataFrame) -> pd.DataFrame:
                 and column in backtest_df.columns
         ):
             if not isinstance(backtest_df[column], pd.DatetimeIndex):
-                backtest_df[column] = pd.to_datetime(backtest_df[column])
+                if isinstance(backtest_df[column], str):
+                    backtest_df[column] = pd.to_numeric(backtest_df[column], errors='coerce')
+                backtest_df[column] = pd.to_datetime(backtest_df[column], unit='ms', errors='coerce')
             backtest_df = backtest_df.set_index(column)
             break
 
@@ -413,16 +444,16 @@ def get_score(
     # group by time
     from configuration import SHARPE_BACKTEST_FREQ
 
-    backtest_df = get_backtest_df_date_indexed(backtest_df=backtest_df)
-    backtest_df_indexed = backtest_df.groupby(
-        pd.Grouper(freq=SHARPE_BACKTEST_FREQ)
-    ).last()
+    backtest_df_indexed = get_backtest_df_date_indexed(backtest_df=backtest_df)
+    # backtest_df_indexed = backtest_df_indexed.groupby(
+    #     pd.Grouper(freq=SHARPE_BACKTEST_FREQ)
+    # ).last()
 
     equity_curve = backtest_df_indexed[
         get_score_enum_csv_column(equity_column_score)
     ].ffill()
 
-    trades = len(backtest_df)
+    trades = backtest_df_indexed['numberTrades'].max()
     score = 0
     if score_enum == ScoreEnum.falcma_ratio:
         score = get_falces_marin_ratio(equity_curve=equity_curve, number_trades=trades)

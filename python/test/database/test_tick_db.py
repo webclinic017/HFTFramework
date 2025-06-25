@@ -22,6 +22,21 @@ class TestTickDb(unittest.TestCase):
         )
         self.assertIsNotNone(depth_df)
 
+    @unittest.skip
+    def test_regenerate_candles_midprice(self):
+        type_data = 'candle_midpricetime_%s%d' % ('MIN', 5)
+        source_path = rf"{self.tick}/type={type_data}/instrument={self.instrument_test}"
+
+        candles_regenerate = self.tick._regenerate_candles_midprice_time(
+            instrument_pk=self.instrument_test,
+            start_date=self.start_date,
+            end_date=self.end_date,
+            source_path=source_path,
+            resolution='MIN',
+            num_units=5,
+        )
+        self.assertIsNotNone(candles_regenerate)
+
     def test_get_candles_midprice(self):
         candles_midprice = self.tick.get_candles_midprice_time(
             instrument_pk=self.instrument_test,

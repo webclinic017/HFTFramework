@@ -12,6 +12,8 @@ from stable_baselines3.common.vec_env import (
     SubprocVecEnv,
     VecEnv,
 )
+
+from decision_transformer.models.decision_transformer import DecisionTransformer
 from trading_algorithms.iterations_period_time import IterationsPeriodTime
 from gym_zmq import MarketMakingBacktestEnv
 import datetime
@@ -29,7 +31,7 @@ from trading_algorithms.reinforcement_learning.rl_algorithm import (
     InfoStepKey,
     RlAlgorithmParameters, ModelPolicy, BaseModelType,
 )
-
+from transformers import DecisionTransformerConfig, DecisionTransformerModel
 
 class CoreBaselines3(CoreRlAlgorithm):
     USE_JAX = True
@@ -170,13 +172,16 @@ class CoreBaselines3(CoreRlAlgorithm):
             # env = self._load_env(env0, normalizer_model_path, training)
             # loading the data
             print(rf"Loading existing model from {agent_model_path} ...")
-            model = self._load_model(env0)
-            if self.check_model(model, env0):
-                if model.env is None:
-                    model.env = env0
-                return model, env0
-            else:
-                print("WARNING: model and env are not compatible -> create new model")
+            try:
+                model = self._load_model(env0)
+                if self.check_model(model, env0):
+                    if model.env is None:
+                        model.env = env0
+                    return model, env0
+                else:
+                    print("WARNING: model and env are not compatible -> create new model")
+            except Exception as e:
+                print(f"ERROR: model loading failed {agent_model_path} -> create new model")
 
         # create models
         if not training:
@@ -207,17 +212,20 @@ class CoreBaselines3(CoreRlAlgorithm):
         -------
 
         '''
+
         if CoreBaselines3.USE_JAX:
             from sbx import DQN, PPO, SAC  # sbx-rl
         else:
             from stable_baselines3 import DQN, PPO, SAC
 
-        if self.base_model_str == "DQN":
+        if self.base_model_str == BaseModelType.DQN:
             return DQN
-        elif self.base_model_str == "PPO":
+        elif self.base_model_str == BaseModelType.PPO:
             return PPO
-        elif self.base_model_str == "SAC":
+        elif self.base_model_str == BaseModelType.SAC:
             return SAC
+        elif self.base_model_str == BaseModelType.DECISION_TRANSFORMER:
+            return DecisionTransformer
         else:
             raise ValueError(
                 f"Unknown base model rl_algorithm.get_model {self.base_model_str}"
@@ -437,6 +445,14 @@ class CoreBaselines3(CoreRlAlgorithm):
             print(f'PPO : {model_args}')
             model = PPO(**model_args)
 
+        elif self._base_model == DecisionTransformer:
+            # Initializing a DecisionTransformer configuration
+            model_kwargs = {}
+            print(f'DecisionTransformerModel : {model_kwargs}')
+            configuration = DecisionTransformerConfig(**model_kwargs)
+            # Initializing a model (with random weights) from the configuration
+            model = DecisionTransformerModel(configuration)
+
         elif self._base_model == DQN or self._base_model == SAC:
             training_predict_iteration_period = self.parameters.get(
                 RlAlgorithmParameters.training_predict_iteration_period,
@@ -528,6 +544,9 @@ class CoreBaselines3(CoreRlAlgorithm):
 
                 model = SAC(**model_args)
 
+
+
+
         else:
             print(
                 rf"Unknown base_model: {self._base_model} -> add implementation to rl_algorithm.py(_create_model_agent)"
@@ -548,7 +567,7 @@ class CoreBaselines3(CoreRlAlgorithm):
             simultaneous_algos = os.cpu_count() - simultaneous_algos
         simultaneous_algos = min(simultaneous_algos, os.cpu_count())
         # Sequential
-        if not self._parallelized_training_model():
+        if simultaneous_algos > 1 and not self._parallelized_training_model():
             # DQN does not support parallel training
             print(
                 rf"base_model {self.base_model_str} detected as not parallelized -> force simultaneous_algos = 1 (DummyVecEnv)"
@@ -573,8 +592,29 @@ class CoreBaselines3(CoreRlAlgorithm):
             normalizer_env_path = self.rl_paths.normalizer_model_path
             if os.path.isfile(normalizer_env_path):
                 print(f"Loading normalize training: {training} model from {normalizer_env_path}...")
-                env = VecNormalize.load(normalizer_env_path, env)
+                env_load = VecNormalize.load(normalizer_env_path, env)
+                check_shapes = True
+                if env.observation_space.shape != env_load.observation_space.shape:
+                    print(
+                        f"WARNING: Loading normalize training: {training} different observation_space shape -> not loading normalizer from {normalizer_env_path}")
+                    check_shapes = False
+                if env.action_space.shape != env_load.action_space.shape:
+                    print(
+                        f"WARNING: Loading normalize training: {training} different action_space shape -> not loading normalizer from {normalizer_env_path}")
+                    check_shapes = False
+
+                if check_shapes:
+                    env = env_load
+                else:
+                    env = VecNormalize(env, norm_obs=True, norm_reward=False, training=training,
+                                       clip_obs=self.normalize_clip_obs,
+                                       clip_reward=50.0,
+                                       gamma=0.95)  # with or without VecNormalize
+
+
                 env.training = training
+                # check env actions length is the same
+
 
             else:
                 print(f"Creating new normalize training: {training} model {normalizer_env_path}...")
@@ -607,8 +647,12 @@ class CoreBaselines3(CoreRlAlgorithm):
         return state_equals and action_equals
 
     def _load_model(self, env):
-        # device = self.parameters.get(RlAlgorithmParameters.device, 'auto')
-        return self._base_model.load(self.rl_paths.agent_model_path, env)
+        try:
+            # device = self.parameters.get(RlAlgorithmParameters.device, 'auto')
+            return self._base_model.load(self.rl_paths.agent_model_path, env)
+        except Exception as e:
+            print(f"ERROR _load_model {self.rl_paths.agent_model_path} {e}")
+            raise e
     def get_model(self):
         # device = self.parameters.get(RlAlgorithmParameters.device, 'auto')
         return self._base_model.load(self.rl_paths.agent_model_path)

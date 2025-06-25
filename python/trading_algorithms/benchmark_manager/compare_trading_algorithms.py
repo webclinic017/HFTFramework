@@ -105,9 +105,6 @@ class CompareTradingAlgorithmsLauncher:
                 plot_training=False,
             )
 
-
-
-
     def launch_test(self, max_simultaneous: int = -2) -> dict:
         '''
 
@@ -134,7 +131,7 @@ class CompareTradingAlgorithmsLauncher:
                         "output_dict": output_test,
                     }
                 )
-            process_jobs_joblib(jobs, num_threads=max_simultaneous)
+            process_jobs_joblib(jobs, num_threads=max_simultaneous, prefer='threads')
 
         return output_test
 
@@ -170,7 +167,7 @@ class CompareTradingAlgorithmsLauncher:
                         "simultaneous_algos": simultaneous_algos
                     }
                 )
-            process_jobs_joblib(jobs, num_threads=max_simultaneous)
+            process_jobs_joblib(jobs, num_threads=max_simultaneous, prefer='threads')
 
 
 class CompareTradingAlgorithms:
@@ -360,8 +357,14 @@ class CompareTradingAlgorithms:
         if are_empty_algos:
             output_df = pd.DataFrame.from_dict(output_dict)
             output_df = output_df.transpose()
-            output_df['date'].ffill(inplace=True)
-            output_df['date'].bfill(inplace=True)
+
+            # WARNING pandas 3.0
+            # output_df['date'].ffill(inplace=True)
+            # output_df['date'].bfill(inplace=True)
+
+            output_df.loc[:, 'date'] = output_df['date'].ffill()
+            output_df.loc[:, 'date'] = output_df['date'].bfill()
+
             output_df = output_df.transpose()
             output_dict = output_df.to_dict()
 

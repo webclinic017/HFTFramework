@@ -58,6 +58,7 @@ DEFAULT_PARAMETERS = {
     AlgorithmParameters.first_hour: (0),
     AlgorithmParameters.last_hour: (24),
     AlgorithmParameters.ui: 0,
+    AlgorithmParameters.synthetic_instrument_file: "",
     AvellanedaStoikovParameters.calculate_Tt: 0,
     # if 1 reserve price effect will be less affected by position with the session time
     AvellanedaStoikovParameters.seconds_change_k: (60),
@@ -84,8 +85,9 @@ class AvellanedaStoikov(Algorithm):
         parameters = Algorithm.set_defaults_parameters(
             parameters=parameters, DEFAULT_PARAMETERS=DEFAULT_PARAMETERS
         )
+
         super().__init__(
-            algorithm_info=self.NAME + "_" + algorithm_info, parameters=parameters
+            algorithm_info=Algorithm.get_algorithm_info(self.NAME, algorithm_info), parameters=parameters
         )
 
     def get_parameters(self) -> dict:
@@ -110,6 +112,7 @@ class AvellanedaStoikov(Algorithm):
             delay_order_ms=self.DELAY_MS,
             multithread_configuration=self.MULTITHREAD_CONFIGURATION,
             fees_commissions_included=self.FEES_COMMISSIONS_INCLUDED,
+            search_match_market_trades=self.SEARCH_MATCH_MARKET_TRADES
         )
         output_list = []
         for iteration in range(iterations):
@@ -151,12 +154,13 @@ class AvellanedaStoikov(Algorithm):
         return output_list
 
     def test(
-        self,
-        start_date: datetime.datetime,
-        end_date: datetime,
-        instrument_pk: str,
-        algorithm_number: int = 0,
-        clean_experience: bool = False,
+            self,
+            start_date: datetime.datetime,
+            end_date: datetime,
+            instrument_pk: str,
+            algorithm_number: int = 0,
+            clean_experience: bool = False,
+            raw_results: bool = False,
     ) -> dict:
         backtest_configuration = BacktestConfiguration(
             start_date=start_date,
@@ -165,6 +169,7 @@ class AvellanedaStoikov(Algorithm):
             delay_order_ms=self.DELAY_MS,
             multithread_configuration=self.MULTITHREAD_CONFIGURATION,
             fees_commissions_included=self.FEES_COMMISSIONS_INCLUDED,
+            search_match_market_trades=self.SEARCH_MATCH_MARKET_TRADES
         )
         parameters = self.get_parameters()
         algorithm_name = self.get_test_name(
@@ -191,7 +196,7 @@ class AvellanedaStoikov(Algorithm):
         backtest_controller = BacktestLauncherController(
             backtest_launchers=[backtest_launcher], max_simultaneous=1
         )
-        output_dict = backtest_controller.run()
+        output_dict = backtest_controller.run(raw_results)
         output_dict[self.algorithm_info] = output_dict[algorithm_name]
         del output_dict[algorithm_name]
         return output_dict
@@ -228,20 +233,65 @@ class AvellanedaStoikov(Algorithm):
 
 if __name__ == '__main__':
     avellaneda_stoikov = AvellanedaStoikov(algorithm_info='test_main')
-
+    avellaneda_stoikov.parameters[AvellanedaStoikovParameters.risk_aversion] = 0.00006
+    avellaneda_stoikov.parameters[AvellanedaStoikovParameters.midprice_period_seconds] = 4
+    avellaneda_stoikov.parameters[AvellanedaStoikovParameters.midprice_period_window] = 60
+    avellaneda_stoikov.parameters[
+        AlgorithmParameters.synthetic_instrument_file] = rf"C:\Users\javif\Coding\market_making_fw\python_lambda\trading_algorithms\StatArb_crypto.json"
     avellaneda_stoikov.MULTITHREAD_CONFIGURATION = MultiThreadConfiguration.singlethread
     avellaneda_stoikov.DELAY_MS = 0.0
     avellaneda_stoikov.FEES_COMMISSIONS_INCLUDED = False
 
-    output_test = avellaneda_stoikov.test(
-        instrument_pk='btcusdt_kraken',
-        start_date=datetime.datetime(year=2023, day=13, month=11, hour=7),
-        end_date=datetime.datetime(year=2023, day=13, month=11, hour=15),
+    # bests_params, result_df = avellaneda_stoikov.parameter_tuning(instrument_pk='btceur_kraken',
+    #                                                               start_date=datetime.datetime(year=2025, day=6,
+    #                                                                                            month=3, hour=7),
+    #                                                               end_date=datetime.datetime(year=2025, day=6, month=3,
+    #                                                                                          hour=12),
+    #                                                               parameters_min={
+    #                                                                   AvellanedaStoikovParameters.risk_aversion: 0.0},
+    #                                                               parameters_max={
+    #                                                                   AvellanedaStoikovParameters.risk_aversion: 1.0},
+    #                                                               max_simultaneous=3,
+    #                                                               generations=5,
+    #                                                               ga_configuration=GAConfiguration()
+    #
+    #                                                               )
+    # avellaneda_stoikov.set_parameters(bests_params)
+    #
+    #
+    # output_test = avellaneda_stoikov.test(
+    #     instrument_pk='btceur_kraken',
+    #     start_date=datetime.datetime(year=2025, day=6, month=3, hour=7),
+    #     end_date=datetime.datetime(year=2025, day=6, month=3, hour=12),
+    # )
+    #
+    # avellaneda_stoikov.plot_trade_results(output_test[avellaneda_stoikov.algorithm_info])
+    # import matplotlib.pyplot as plt;
+    #
+    # plt.show()
+
+    output_tests = avellaneda_stoikov.test_batch(
+        instrument_pk='btceur_kraken',
+        start_dates=[datetime.datetime(year=2024, day=9, month=11, hour=7),
+                     datetime.datetime(year=2024, day=10, month=11, hour=7)],
+        end_dates=[datetime.datetime(year=2024, day=9, month=11, hour=15),
+                   datetime.datetime(year=2024, day=10, month=11, hour=15)],
+        max_simultaneous=2,
     )
 
-    name_output = avellaneda_stoikov.get_test_name(name=avellaneda_stoikov.NAME)
-    backtest_df = output_test[name_output]
-    avellaneda_stoikov.plot_trade_results(backtest_df)
+    avellaneda_stoikov.send_backtest_results_email(output_tests)
 
     import matplotlib.pyplot as plt
-    plt.show()
+
+    for output_test in output_tests.values():
+        name_output = avellaneda_stoikov.get_test_name(name=avellaneda_stoikov.NAME)
+        backtest_df = output_test[name_output]
+        avellaneda_stoikov.plot_trade_results(backtest_df)
+        plt.close()
+
+    # name_output = avellaneda_stoikov.get_test_name(name=avellaneda_stoikov.NAME)
+    # backtest_df = output_test[name_output]
+    # avellaneda_stoikov.plot_trade_results(backtest_df)
+
+    # import matplotlib.pyplot as plt
+    # plt.show()

@@ -142,18 +142,19 @@ class DQNAlgorithm(Algorithm):
             return self._get_ta_state_columns(True)
 
     def _get_market_state_columns(self):
-        private_horizon_ticks = self.parameters['horizonTicksPrivateState']
-        market_horizon_ticks = self.parameters['horizonTicksMarketState']
-        candle_horizon = self.parameters['horizonCandlesState']
+        from trading_algorithms.reinforcement_learning.rl_algorithm import RlAlgorithmParameters
+        private_horizon_ticks = self.parameters[RlAlgorithmParameters.horizon_ticks_private_state]
+        market_horizon_ticks = self.parameters[RlAlgorithmParameters.horizon_ticks_market_state]
+        candle_horizon = self.parameters[RlAlgorithmParameters.horizon_candles_state]
         #     "otherInstrumentsStates": [],
         #     "otherInstrumentsMsPeriods": []
         multimarket_instruments = []
         multimarket_periods = []
 
-        if 'otherInstrumentsStates' in self.parameters:
-            multimarket_instruments = self.parameters['otherInstrumentsStates']
-        if 'otherInstrumentsMsPeriods' in self.parameters:
-            multimarket_periods = self.parameters['otherInstrumentsMsPeriods']
+        if RlAlgorithmParameters.state_other_instruments in self.parameters:
+            multimarket_instruments = self.parameters[RlAlgorithmParameters.state_other_instruments]
+        if RlAlgorithmParameters.state_other_instruments_period_ms in self.parameters:
+            multimarket_periods = self.parameters[RlAlgorithmParameters.state_other_instruments_period_ms]
 
         return StateUtils._get_market_state_columns(
             private_horizon_ticks=private_horizon_ticks,
@@ -164,22 +165,23 @@ class DQNAlgorithm(Algorithm):
         )
 
     def _get_ta_state_columns(self, is_fx: bool = False):
+        from trading_algorithms.reinforcement_learning.rl_algorithm import RlAlgorithmParameters
         is_binary = False
-        if "binaryStateOutputs" in self.parameters.keys():
-            is_binary = self.parameters["binaryStateOutputs"] > 0
+        if RlAlgorithmParameters.state_binary in self.parameters.keys():
+            is_binary = self.parameters[RlAlgorithmParameters.state_binary] > 0
 
         horizonTicksMarketState = DEFAULT_MARKET_HORIZON_SAVE
-        if "horizonTicksMarketState" in self.parameters.keys():
-            horizonTicksMarketState = self.parameters["horizonTicksMarketState"]
+        if RlAlgorithmParameters.horizon_ticks_market_state in self.parameters.keys():
+            horizonTicksMarketState = self.parameters[RlAlgorithmParameters.horizon_ticks_market_state]
 
         periods = DEFAULT_TA_INDICATORS_PERIODS
         if is_binary:
             periods = DEFAULT_TA_INDICATORS_PERIODS_BINARY
-        if "periodsTAStates" in self.parameters.keys():
-            periods = self.parameters["periodsTAStates"]
+        if RlAlgorithmParameters.state_ta_indicators_periods in self.parameters.keys():
+            periods = self.parameters[RlAlgorithmParameters.state_ta_indicators_periods]
 
-        multimarket_instruments = self.parameters['otherInstrumentsStates']
-        multimarket_periods = self.parameters['otherInstrumentsMsPeriods']
+        multimarket_instruments = self.parameters[RlAlgorithmParameters.state_other_instruments]
+        multimarket_periods = self.parameters[RlAlgorithmParameters.state_other_instruments_period_ms]
 
         return StateUtils._get_ta_state_columns(
             binary_outputs=is_binary,
@@ -198,6 +200,7 @@ class DQNAlgorithm(Algorithm):
     def get_memory_replay_df(
             self, memory_replay_file: str = None, state_columns: list = None
     ) -> pd.DataFrame:
+        from trading_algorithms.reinforcement_learning.rl_algorithm import RlAlgorithmParameters
         if memory_replay_file is None:
             memory_replay_file = (
                     LAMBDA_OUTPUT_PATH + os.sep + self.get_memory_replay_filename()
@@ -208,7 +211,7 @@ class DQNAlgorithm(Algorithm):
             if self.is_filtered_states:
                 if self.state_type == StateType.market_state:
                     # add private
-                    private_horizon_ticks = self.parameters['horizonTicksPrivateState']
+                    private_horizon_ticks = self.parameters[RlAlgorithmParameters.horizon_ticks_private_state]
                     state_columns_temp = []
                     if not REMOVE_PRIVATE_STATES:
                         for private_state_horizon in range(
@@ -226,7 +229,7 @@ class DQNAlgorithm(Algorithm):
                         # for private_state_horizon in range(private_horizon_ticks - 1, -1, -1):
                         #     state_columns_temp.append('score_%d' % private_state_horizon)
                         state_columns_temp.append("minutes_to_finish")
-                    state_columns_temp += self.parameters['stateColumnsFilter']
+                    state_columns_temp += self.parameters[RlAlgorithmParameters.state_filter]
                     state_columns = state_columns_temp
                     # sort_ordered=self._get_default_state_columns()
 
@@ -267,8 +270,9 @@ class DQNAlgorithm(Algorithm):
 
     def get_number_of_state_columns(self, parameters: dict, print_it: bool = False) -> int:
         state_columns = []
-        if 'stateColumnsFilter' in list(parameters.keys()):
-            state_columns = parameters['stateColumnsFilter']
+        from trading_algorithms.reinforcement_learning.rl_algorithm import RlAlgorithmParameters
+        if RlAlgorithmParameters.state_filter in list(parameters.keys()):
+            state_columns = parameters[RlAlgorithmParameters.state_filter]
             for state_str in copy.copy(state_columns):
                 # remove private not filtered! to add it later
                 for private_prefix in PRIVATE_COLUMNS:
@@ -286,7 +290,7 @@ class DQNAlgorithm(Algorithm):
             number_state_columns = len(state_columns)
             if self.state_type == StateType.market_state:
                 private_columns = StateUtils.get_private_state_columns(
-                    parameters['horizonTicksPrivateState']
+                    parameters[RlAlgorithmParameters.horizon_ticks_private_state]
                 )
                 individual_columns = StateUtils.get_individual_state_columns()
                 number_state_columns += len(private_columns) + len(individual_columns)
@@ -453,7 +457,8 @@ class DQNAlgorithm(Algorithm):
             )
             return csv_files_out
 
-        max_batch_size = self.parameters['maxBatchSize']
+        from trading_algorithms.reinforcement_learning.rl_algorithm import RlAlgorithmParameters
+        max_batch_size = self.parameters[RlAlgorithmParameters.max_batch_size]
 
         # add the q matrix for normal algo name
         csv_files_out.append(
@@ -587,6 +592,7 @@ class DQNAlgorithm(Algorithm):
             delay_order_ms=self.DELAY_MS,
             multithread_configuration=self.MULTITHREAD_CONFIGURATION,
             fees_commissions_included=self.FEES_COMMISSIONS_INCLUDED,
+            search_match_market_trades=self.SEARCH_MATCH_MARKET_TRADES,
         )
         explore_prob = 1.0  # i dont care
         max_batch_size = self.get_max_batch_size()
@@ -844,6 +850,7 @@ class DQNAlgorithm(Algorithm):
             delay_order_ms=self.DELAY_MS,
             multithread_configuration=self.MULTITHREAD_CONFIGURATION,
             fees_commissions_included=self.FEES_COMMISSIONS_INCLUDED,
+            search_match_market_trades=self.SEARCH_MATCH_MARKET_TRADES,
         )
         explore_prob = 1.0  # i dont care
         # if force_explore_prob is not None:
@@ -1311,6 +1318,7 @@ class DQNAlgorithm(Algorithm):
             trainingTargetIterationPeriod: int = None,  # -1 offline train at the end
             algorithm_number: int = None,
             clean_experience: bool = False,
+            raw_results: bool = False,
     ) -> dict:
         from trading_algorithms.reinforcement_learning.rl_algorithm import (
             RlAlgorithmParameters,
@@ -1323,6 +1331,7 @@ class DQNAlgorithm(Algorithm):
             delay_order_ms=self.DELAY_MS,
             multithread_configuration=self.MULTITHREAD_CONFIGURATION,
             fees_commissions_included=self.FEES_COMMISSIONS_INCLUDED,
+            search_match_market_trades=self.SEARCH_MATCH_MARKET_TRADES,
         )
         parameters = self.get_parameters(explore_prob=explore_prob)
         if trainingPredictIterationPeriod is not None:

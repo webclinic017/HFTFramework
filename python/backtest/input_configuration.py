@@ -46,9 +46,10 @@ class BacktestConfiguration:
             start_date: datetime.datetime,
             end_date: datetime.datetime,
             instrument_pk: str,
-            delay_order_ms: int = 65,
-            multithread_configuration: str = MultiThreadConfiguration.multithread,
-            fees_commissions_included: bool = True,
+            delay_order_ms: int = 0,
+            multithread_configuration: str = MultiThreadConfiguration.singlethread,
+            fees_commissions_included: bool = False,
+            search_match_market_trades: bool = False,
             bucle_run: bool = False,
             seed: int = None,
     ):
@@ -61,6 +62,7 @@ class BacktestConfiguration:
         instrument_pk
         delay_order_ms
         multithread_configuration
+        search_match_market_trades: if true, search for market trades in the database, if false, using market time
         fees_commissions_included
         bucle_run: if true , backtest in java is going to bucle running ,for training gym
         seed:
@@ -73,6 +75,7 @@ class BacktestConfiguration:
         self.fees_commissions_included = fees_commissions_included
         self.bucle_run = bucle_run
         self.initial_sleep_seconds = -1
+        self.search_match_market_trades = search_match_market_trades
         self.seed = seed
 
     @staticmethod
@@ -121,6 +124,7 @@ class BacktestConfiguration:
         output_dict['delayOrderMs'] = self.delay_order_ms
         output_dict['multithreadConfiguration'] = self.multithread_configuration
         output_dict['feesCommissionsIncluded'] = self.fees_commissions_included
+        output_dict['searchMatchMarketTrades'] = self.search_match_market_trades
         json_object = json.dumps(output_dict)
         return json_object
 

@@ -2,6 +2,23 @@ import pandas as pd
 import copy
 
 
+def reduce_memory_usage(df: pd.DataFrame) -> pd.DataFrame:
+    '''
+    Reduces memory usage of a pandas dataframe
+    Parameters
+    ----------
+    df
+
+    Returns
+    -------
+
+    '''
+    import numpy as np
+    cols = df.select_dtypes(include=[np.float64]).columns
+    df[cols] = df[cols].astype(np.float32)
+    return df
+
+
 def join_by_columns(table_1: pd.DataFrame, table_2: pd.DataFrame) -> pd.DataFrame:
     # df1 = df1.join(df2)
     # df1 = pd.concat([df1, df2], axis=1)
@@ -21,10 +38,14 @@ def join_by_columns(table_1: pd.DataFrame, table_2: pd.DataFrame) -> pd.DataFram
     return output_df
 
 
-def join_by_row(table_1: pd.DataFrame, table_2: pd.DataFrame) -> pd.DataFrame:
-    # df1 = df1.append(df2)
-    # df1 = pd.concat([df1, df2], axis=0)
-    assert table_1.shape[1] == table_2.shape[1]
+def join_by_row(table_1, table_2) -> pd.DataFrame:
+    # Check if either DataFrame is empty
+    if table_1.empty:
+        return table_2.copy()
+    elif table_2.empty:
+        return table_1.copy()
+
+    # Both DataFrames are non-empty, proceed with concatenation
     output_df = table_1.copy()
     output_df = pd.concat([output_df, table_2], axis=0)
     return output_df
@@ -33,11 +54,25 @@ def join_by_row(table_1: pd.DataFrame, table_2: pd.DataFrame) -> pd.DataFrame:
 def join_two_timeseries_different_index_ffill(
         table_1: pd.DataFrame, table_2: pd.DataFrame
 ):
+    table_1 = table_1.loc[~table_1.index.duplicated(keep='first')]
+    table_2 = table_2.loc[~table_2.index.duplicated(keep='first')]
     concat_df = pd.concat([table_1, table_2], axis=1)
     concat_df.index = pd.to_datetime(concat_df.index)
 
     concat_df = concat_df.sort_index()
     concat_df = concat_df.ffill().fillna(0)
+    return concat_df
+
+
+def join_by_columns_two_timeseries_different_index(
+        table_1: pd.DataFrame, table_2: pd.DataFrame
+):
+    table_1 = table_1.loc[~table_1.index.duplicated(keep='first')]
+    table_2 = table_2.loc[~table_2.index.duplicated(keep='first')]
+    concat_df = pd.concat([table_1, table_2], axis=1)
+    concat_df.index = pd.to_datetime(concat_df.index)
+
+    concat_df = concat_df.sort_index()
     return concat_df
 
 

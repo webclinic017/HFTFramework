@@ -2,13 +2,15 @@ import datetime
 from pathlib import Path
 
 import pandas as pd
-
+import numpy as np
 import os
 from glob import glob
 
 from pandas._libs.tslibs.offsets import BDay
 
 from configuration import LAMBDA_DATA_PATH
+from utils.cache_utils import memory_cache
+from utils.pandas_utils.dataframe_utils import reduce_memory_usage
 
 
 # root_db_path = rf'\\nas\home\lambda_data'
@@ -37,6 +39,21 @@ def get_imbalance(depth_df, max_depth: int = 5):
             total_bid_vol += depth_df['bidQuantity%d' % market_horizon_i]
     imbalance = (total_bid_vol - total_ask_vol) / (total_bid_vol + total_ask_vol)
     return imbalance
+
+
+class CandleType:
+    CANDLE_TIME = 'candle_time'
+    CANDLE_MIDPRICE_TIME = 'candle_midpricetime'
+    CANDLE_TICK = 'candle_tick'
+    CANDLE_VOLUME = 'candle_volume'
+
+
+class CandleTimeResolution:
+    # Resolution type ('D', 'H', 'MIN', 'S')
+    MIN = 'MIN'
+    HOUR = 'H'
+    DAY = 'D'
+    SECOND = 'S'
 
 
 class TickDB:
@@ -108,10 +125,12 @@ class TickDB:
     #     type_data = 'depth'
     #     return pd.read_parquet(rf"{self.base_path}/type={type_data}/instrument={instrument_pk}")
 
-    def get_all_instruments(self, type_str: str = 'trade') -> list:
+    def get_all_instruments(self, type_str: str = 'depth', modified_since=None) -> list:
         source_path = rf"{self.base_path}/type={type_str}"
         # source_path = os.path.normpath(source_path)
         all_folders = glob(source_path + "/*")
+        if modified_since is not None:
+            all_folders = [folder for folder in all_folders if os.path.getmtime(folder) > modified_since.timestamp()]
         instruments = []
         for folder in all_folders:
             instrument = folder.split("instrument=")[-1]
@@ -133,6 +152,7 @@ class TickDB:
         market_instrument = instrument_pk.split('_')[-1].lower()
         return market_instrument in self.FX_MARKETS
 
+    @memory_cache(maxsize=256)
     def get_depth(
             self,
             instrument_pk: str,
@@ -142,7 +162,23 @@ class TickDB:
             last_hour: int = None,
             columns: list = None,
     ):
+        '''
 
+        Parameters
+        ----------
+        instrument_pk
+        start_date : included
+        end_date :  included
+        first_hour
+        last_hour
+        columns
+
+        Returns
+        -------
+
+        '''
+
+        start_date, end_date = self._check_start_date_end_date(start_date, end_date)
         start_date_str = start_date.strftime(self.date_str_format)
         end_date_str = end_date.strftime(self.date_str_format)
         type_data = 'depth'
@@ -152,16 +188,16 @@ class TickDB:
         if not os.path.isdir(source_path):
             print(f'creating DEPTH {source_path} ...')
 
-        print(
-            "querying %s tick_db %s from %s to %s"
-            % (type_data, instrument_pk, start_date_str, end_date_str)
-        )
+        # print(
+        #     "querying %s tick_db %s from %s to %s"
+        #     % (type_data, instrument_pk, start_date_str, end_date_str)
+        # )
         try:
             import pyarrow.parquet as pq
 
             dataset = pq.ParquetDataset(
                 source_path,
-                filters=[('date', '>=', start_date_str), ('date', '<', end_date_str)],
+                filters=[('date', '>=', int(start_date_str)), ('date', '<=', int(end_date_str))],
             )
             if columns is None:
                 table = dataset.read()
@@ -176,11 +212,12 @@ class TickDB:
             df = self._get_manual_pandas(
                 instrument_pk=instrument_pk, start_date=start_date, end_date=end_date
             )
-        if df is None:
+        if df is None or len(df) == 0:
             print(
                 rf"WARNING: no data found {instrument_pk} between {start_date_str} and {end_date_str} -> None"
             )
             return None
+        df = reduce_memory_usage(df)
         if columns is not None:
             df = df.loc[:, columns]
 
@@ -200,9 +237,18 @@ class TickDB:
             )
 
         if start_date is not None:
-            df = df[start_date:]
+            try:
+                df = df[start_date:]
+            except Exception as e:
+                print(rf"WARNING: start_date={start_date} -> {e}")
         if end_date is not None:
-            df = df[:end_date]
+            try:
+                df = df[:end_date]
+            except Exception as e:
+                print(rf"WARNING: end_date={end_date} -> {e}")
+        df = reduce_memory_usage(df)
+        df.index = pd.to_datetime(df.index)
+        df.sort_index(inplace=True)
         return df
 
     def create_date_index(self, df) -> pd.DataFrame:
@@ -211,6 +257,19 @@ class TickDB:
         df['date'] = pd.to_datetime(df.index * 1000000)
         return df
 
+    def _check_start_date_end_date(self, start_date, end_date):
+        # if isinstance(start_date, datetime.date):
+        #     start_date = datetime.datetime.combine(start_date, datetime.datetime.min.time())
+        # if isinstance(end_date, datetime.date):
+        #     end_date = datetime.datetime.combine(end_date, datetime.datetime.max.time())
+        if start_date == end_date:
+            # print(rf"WARNING: start_date==end_date={start_date} -> adding 24 hours to end_date and 0 to start_date")
+            start_date = datetime.datetime.combine(start_date, datetime.datetime.min.time())
+            end_date = datetime.datetime.combine(end_date, datetime.datetime.max.time())
+
+        return start_date, end_date
+
+    @memory_cache(maxsize=256)
     def get_trades(
             self,
             instrument_pk: str,
@@ -219,7 +278,22 @@ class TickDB:
             first_hour: int = None,
             last_hour: int = None,
     ):
+        '''
+
+        Parameters
+        ----------
+        instrument_pk
+        start_date :included
+        end_date: included
+        first_hour
+        last_hour
+
+        Returns
+        -------
+
+        '''
         import pyarrow.parquet as pq
+        start_date, end_date = self._check_start_date_end_date(start_date, end_date)
 
         start_date_str = start_date.strftime(self.date_str_format)
         end_date_str = end_date.strftime(self.date_str_format)
@@ -229,16 +303,18 @@ class TickDB:
         if not os.path.isdir(source_path):
             print(f'creating TRADE {source_path} ...')
 
-        print(
-            "querying %s tick_db %s from %s to %s"
-            % (type_data, instrument_pk, start_date_str, end_date_str)
-        )
+        # print(
+        #     "querying %s tick_db %s from %s to %s"
+        #     % (type_data, instrument_pk, start_date_str, end_date_str)
+        # )
         dataset = pq.ParquetDataset(
             source_path,
-            filters=[('date', '>=', start_date_str), ('date', '<', end_date_str)],
+            filters=[('date', '>=', int(start_date_str)), ('date', '<=', int(end_date_str))],
         )
         table = dataset.read()
         df = table.to_pandas()
+        df = reduce_memory_usage(df)
+
         df = self.create_date_index(df)
 
         df.dropna(inplace=True)
@@ -252,6 +328,9 @@ class TickDB:
             df = df[start_date:]
         if end_date is not None:
             df = df[:end_date]
+        df = reduce_memory_usage(df)
+        df.index = pd.to_datetime(df.index)
+        df.sort_index(inplace=True)
         return df
 
     def _persist_candles(
@@ -261,15 +340,7 @@ class TickDB:
             start_date: datetime.datetime,
             end_date: datetime.datetime,
     ):
-
-        # ignore warnings
-        import warnings
-        from pandas.core.common import SettingWithCopyWarning
-
-        warnings.filterwarnings(category=SettingWithCopyWarning, action="ignore")
-
         day_to_persist = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-
         output = None
         while day_to_persist < end_date:
             day_to_persist_str = day_to_persist.strftime(self.date_str_format)
@@ -288,11 +359,13 @@ class TickDB:
                     os.remove(file_path)
                 # error schema
                 try:
-                    df_to_persist.to_parquet(
-                        file_path, compression='GZIP', engine='fastparquet'
-                    )
+                    print(rf"persisting {file_path} ... from {df_to_persist.index[0]} to {df_to_persist.index[-1]}... ")
+                    df_to_persist.to_parquet(file_path, use_dictionary=False)
                 except Exception as e:
-                    df_to_persist.to_parquet(file_path, compression='GZIP')
+                    df_to_persist.to_parquet(
+                        file_path, engine='fastparquet', use_dictionary=False
+                    )
+
                 # table = pa.Table.from_pandas(df_to_persist)
                 # pq.write_table(table, complete_path + os.sep + 'data.parquet',compression='GZIP')
 
@@ -304,28 +377,93 @@ class TickDB:
             start_date: datetime.datetime,
             end_date: datetime.datetime,
     ):
+        missing_start = df.index[0] - BDay(2) > start_date
+        missing_end = df.index[-1] + BDay(1) < end_date
 
-        if df.index[0] - BDay(2) > start_date or df.index[-1] + BDay(1) < end_date:
-            print(
-                f"some day is missing on candles between {start_date} and {end_date}  -> df from first_index:{df.index[0]}>start_date: {start_date} or last_index:{df.index[-1]}< end_date: {end_date}"
-            )
+        if missing_start or missing_end:
+            if missing_start and missing_end:
+                print(
+                    f"some day is missing on candles between {start_date} and {end_date}  -> df from first_index:{df.index[0]}>start_date: {start_date} and last_index:{df.index[-1]}< end_date: {end_date}"
+                )
+            elif missing_start:
+                print(
+                    f"some day is missing on candles between {start_date} start -> df from first_index:{df.index[0]}>start_date: {start_date}"
+                )
+            elif missing_end:
+                print(
+                    f"some day is missing on candles between {start_date} end -> df last_index:{df.index[-1]}< end_date: {end_date}"
+                )
+
             raise Exception(
                 f"some day is missing on candles between {start_date} and {end_date}  -> df from {df.index[0]} and {df.index[-1]}"
             )
 
-    def _regenerate_candles_midprice_time(
-            self,
-            instrument_pk: str,
-            start_date: datetime.datetime,
-            end_date: datetime.datetime,
-            resolution: str,
-            num_units: int,
-            source_path: str,
-            first_hour=None,
-            last_hour=None,
-    ):
-        from database.candle_generation import generate_candle_time
+    def _try_regenerate_period_one(self,
+                                   instrument_pk: str,
+                                   start_date: datetime.datetime,
+                                   end_date: datetime.datetime,
+                                   resolution: str,
+                                   num_units: int,
+                                   first_hour=None,
+                                   last_hour=None, ):
 
+        try:
+            unit_candles = self.get_candles_midprice_time(
+                instrument_pk=instrument_pk,
+                start_date=start_date,
+                end_date=end_date,
+                resolution=resolution,
+                num_units=1,
+                is_error_call=True,
+                first_hour=first_hour,
+                last_hour=last_hour,
+            )
+        except Exception as e:
+            unit_candles = None
+
+        if unit_candles is not None and len(unit_candles) > 0:
+            resolution_used = resolution.lower()
+            # group unit_candles by num_units take close price
+            resampled = unit_candles[['close', 'low', 'high', 'open', 'date_time']].shift(-1).resample(
+                f"{num_units}{resolution_used}").ohlc()
+            agg = unit_candles[
+                ['tick_num', 'volume', 'cum_buy_volume', 'cum_ticks', 'cum_dollar_value']].resample(
+                f"{num_units}{resolution_used}").sum()
+            last_rows = unit_candles[['date_time']].resample(
+                f"{num_units}{resolution_used}").last()
+
+            df = pd.DataFrame(index=resampled.index, columns=unit_candles.columns)
+            df['date_time'] = resampled['date_time']['open']  # time must be closing candle time
+
+            df['open'] = resampled['open']['open']
+            df['close'] = resampled['close']['close']
+            df['high'] = resampled['high']['high']
+            df['low'] = resampled['low']['low']
+
+            df['tick_num'] = agg['tick_num']
+            df['volume'] = agg['volume']
+            df['cum_buy_volume'] = agg['cum_buy_volume']
+            df['cum_ticks'] = agg['cum_ticks']
+            df['cum_dollar_value'] = agg['cum_dollar_value']
+            df.reset_index(inplace=True)
+            df['datetime'] = df['datetime'].shift(-1).ffill()
+            df = df.set_index('datetime')
+            # drop duplicates index and keep first
+            df = df[~df.index.duplicated(keep='first')].sort_index()
+            del df['date']
+            return df
+        return None
+
+    def _generate_from_depth(self,
+                             instrument_pk: str,
+                             start_date: datetime.datetime,
+                             end_date: datetime.datetime,
+                             resolution: str,
+                             num_units: int,
+                             first_hour=None,
+                             last_hour=None
+                             ):
+        from database.candle_generation import generate_candle_time
         # add more time in boundaries
         depth_df = self.get_depth(
             instrument_pk=instrument_pk,
@@ -340,7 +478,19 @@ class TickDB:
             print(
                 rf"WARNING: something is wrong on {instrument_pk} to regenerate candles_midprice_time depth_df between first_index:{first_index}>start_date: {start_date}  or last_index:{last_index}<end_date: {end_date}"
             )
-        depth_df = depth_df[start_date:end_date]
+
+        if start_date == end_date:
+            print(
+                rf"WARNING _regenerate_candles_midprice_time: start_date==end_date={start_date} -> adding 24 hours to end_date and 0 to start_date")
+            start_date = datetime.datetime.combine(start_date, datetime.datetime.min.time())
+            end_date = datetime.datetime.combine(end_date, datetime.datetime.max.time())
+        # get depth_df between start_time and end_time
+        start_date_str = datetime.datetime.combine(start_date,
+                                                   datetime.datetime.min.time())  # start_date.strftime("%Y-%m-%d")
+        end_date_str = datetime.datetime.combine(end_date,
+                                                 datetime.datetime.max.time())  # end_date.strftime("%Y-%m-%d")
+        depth_df = depth_df[start_date_str:end_date_str]
+
         if resolution == 'D' and first_hour is not None and last_hour is not None:
             depth_df = depth_df.between_time(
                 start_time=rf"{first_hour}:00", end_time=rf"{last_hour}:00"
@@ -353,20 +503,166 @@ class TickDB:
         depth_df = depth_df[cols]
 
         df = generate_candle_time(
-            df=depth_df, resolution=resolution, num_units=num_units
+            df=depth_df, resolution=resolution, num_units=num_units,
         )
-        df = df[~df.index.duplicated()]
+        return df
 
+    def _regenerate_candles_midprice_time(
+            self,
+            instrument_pk: str,
+            start_date: datetime.datetime,
+            end_date: datetime.datetime,
+            resolution: str,
+            num_units: int,
+            source_path: str,
+            first_hour=None,
+            last_hour=None,
+    ):
+
+        df = self._try_regenerate_period_one(
+            instrument_pk=instrument_pk,
+            start_date=start_date,
+            end_date=end_date,
+            resolution=resolution,
+            num_units=num_units,
+            first_hour=first_hour,
+            last_hour=last_hour,
+        )
+
+        if df is None:
+            df = self._generate_from_depth(
+                instrument_pk=instrument_pk,
+                start_date=start_date,
+                end_date=end_date,
+                resolution=resolution,
+                num_units=num_units,
+                first_hour=first_hour,
+                last_hour=last_hour,
+            )
+        df = df[~df.index.duplicated()].sort_index()
         self._persist_candles(
             df=df, start_date=start_date, end_date=end_date, source_path=source_path
         )
+
+    @memory_cache(maxsize=512)
+    def get_candles(self,
+                    instrument_pk: str,
+                    start_date: datetime.datetime = default_start_date,
+                    end_date: datetime.datetime = default_end_date,
+                    candle_type: CandleType = CandleType.CANDLE_MIDPRICE_TIME,
+                    resolution: CandleTimeResolution = CandleTimeResolution.MIN,
+                    num_units: int = 1,
+                    is_error_call: bool = False,
+                    first_hour=None,
+                    last_hour=None, ) -> pd.DataFrame:
+        '''
+        
+        Parameters
+        ----------
+        instrument_pk
+        start_date
+        end_date
+        candle_type
+        resolution
+        num_units
+        is_error_call
+        first_hour
+        last_hour
+
+        Returns
+        -------
+
+        '''
+
+        if candle_type == CandleType.CANDLE_MIDPRICE_TIME:
+            # depth
+            return self.get_candles_midprice_time(
+                instrument_pk=instrument_pk,
+                start_date=start_date,
+                end_date=end_date,
+                resolution=resolution,
+                num_units=num_units,
+                is_error_call=is_error_call,
+                first_hour=first_hour,
+                last_hour=last_hour,
+            )
+        elif candle_type == CandleType.CANDLE_TIME:
+            # trades
+            return self.get_candles_time(
+                instrument_pk=instrument_pk,
+                start_date=start_date,
+                end_date=end_date,
+                resolution=resolution,
+                num_units=num_units,
+                is_error_call=is_error_call,
+                first_hour=first_hour,
+                last_hour=last_hour,
+            )
+        elif candle_type == CandleType.CANDLE_TICK:
+            # trades
+            return self.get_candles_tick(
+                instrument_pk=instrument_pk,
+                start_date=start_date,
+                end_date=end_date,
+                number_of_ticks=num_units,
+                is_error_call=is_error_call,
+            )
+        elif candle_type == CandleType.CANDLE_VOLUME:
+            # trades
+            return self.get_candles_volume(
+                instrument_pk=instrument_pk,
+                start_date=start_date,
+                end_date=end_date,
+                volume=num_units,
+                is_error_call=is_error_call,
+            )
+
+    def _get_parquet_candles_by_date(self, source_path, start_date, end_date):
+        import pyarrow.parquet as pq
+        import pyarrow as pa
+        start_date_str = start_date.strftime(
+            self.date_str_format)  # minus 1 day to get the previous day restrictive greater
+        end_date_str = end_date.strftime(self.date_str_format)
+
+        # Because NAS has lower version of pyarrow
+        if pa._generated_version.version_tuple[0] <= 7:
+            # avoid error schema
+            dataset = pq.ParquetDataset(
+                source_path,
+                filters=[
+                    ('date', '>=', int(start_date_str)),
+                    ('date', '<=', int(end_date_str)),
+                ],
+                validate_schema=False
+            )
+            all_columns = ['date_time', 'tick_num', 'open', 'high', 'low', 'close', 'volume',
+                           'cum_buy_volume', 'cum_ticks', 'cum_dollar_value', 'date']
+            table = dataset.read(columns=all_columns)
+            df = table.to_pandas()
+            df['date_time'] = df['date_time'].astype('int64')
+            df['datetime'] = pd.to_datetime(df['date_time'] * 1000000000)
+            df.set_index('datetime', inplace=True)
+        else:
+            dataset = pq.ParquetDataset(
+                source_path,
+                filters=[
+                    ('date', '>=', int(start_date_str)),
+                    ('date', '<=', int(end_date_str)),
+                ],
+            )
+            table = dataset.read()
+            df = table.to_pandas()
+
+        df = reduce_memory_usage(df)
+        df.drop_duplicates(inplace=True)
+        return df
 
     def get_candles_midprice_time(
             self,
             instrument_pk: str,
             start_date: datetime.datetime = default_start_date,
             end_date: datetime.datetime = default_end_date,
-            resolution: str = 'MIN',
+            resolution: CandleTimeResolution = CandleTimeResolution.MIN,
             num_units: int = 1,
             is_error_call: bool = False,
             first_hour=None,
@@ -374,19 +670,21 @@ class TickDB:
     ):
 
         '''
+        Get candles by time from depth -> price from midprice
 
         :param instrument_pk:
-        :param start_date:
-        :param end_date:
-        :param resolution: (str) Resolution type ('D', 'H', 'MIN', 'S')
+        :param start_date: included
+        :param end_date: included
+        :param resolution: (CandleTimeResolution) Resolution type ('D', 'H', 'MIN', 'S')
         :param num_units: (int) Number of resolution units (3 days for example, 2 hours)
         :param is_error_call:
         :return:
         '''
 
         from database.candle_generation import generate_candle_time
-
-        start_date_str = start_date.strftime(self.date_str_format)
+        e = ''
+        start_date_str = start_date.strftime(
+            self.date_str_format)  # minus 1 day to get the previous day restrictive greater
         end_date_str = end_date.strftime(self.date_str_format)
         type_data = 'candle_midpricetime_%s%d' % (resolution, num_units)
         source_path = rf"{self.base_path}/type={type_data}/instrument={instrument_pk}"
@@ -394,30 +692,19 @@ class TickDB:
         # source_path = os.path.normpath(source_path)
         if not os.path.isdir(source_path):
             print(f'creating candle_midpricetime {source_path} ...')
+        df = None
         try:
-            print(
-                "querying %s tick_db %s from %s to %s"
-                % (type_data, instrument_pk, start_date_str, end_date_str)
-            )
+            # print(
+            #     "querying %s tick_db %s from %s to %s"
+            #     % (type_data, instrument_pk, start_date_str, end_date_str)
+            # )
             try:
-                import pyarrow.parquet as pq
-
-                df = None
                 if os.path.isdir(source_path):
-                    dataset = pq.ParquetDataset(
-                        source_path,
-                        filters=[
-                            ('date', '>=', start_date_str),
-                            ('date', '<', end_date_str),
-                        ],
-                    )
-                    table = dataset.read()
-                    df = table.to_pandas()
-                    df.drop_duplicates(inplace=True)
+                    df = self._get_parquet_candles_by_date(source_path, start_date, end_date)
 
             except Exception as e:
                 print(
-                    f"cant read using get_candles_midprice_time parquet {instrument_pk} between {start_date_str} and {end_date_str} {source_path} => try manual mode using pandas\n{e}"
+                    f"WARNING: can't read using get_candles_midprice_time parquet {instrument_pk} {num_units}{resolution} between {start_date_str} and {end_date_str} {source_path} => try manual mode using pandas\n{e}"
                 )
                 df = self._get_manual_pandas(
                     instrument_pk=instrument_pk,
@@ -425,11 +712,12 @@ class TickDB:
                     end_date=end_date,
                     type_data=type_data,
                 )
+                df = reduce_memory_usage(df)
                 df.drop_duplicates(inplace=True)
 
-            if df is None:
-                print(
-                    rf"WARNING: no data get_candles_midprice_time found {instrument_pk} between {start_date_str} and {end_date_str} -> None"
+            if df is None or len(df) == 0:
+                raise Exception(
+                    rf"no data get_candles_midprice_time found {instrument_pk} {num_units}{resolution} between {start_date_str} and {end_date_str}"
                 )
 
             self._check_all_candles_exist(
@@ -439,15 +727,36 @@ class TickDB:
         except Exception as e:
             if is_error_call:
                 raise e
+
+            if df is None or len(df) == 0:
+                regenerate_start_date = datetime.datetime.combine(start_date, datetime.datetime.min.time())
+                regenerate_end_date = datetime.datetime.combine(end_date, datetime.datetime.max.time())
+            else:
+                missing_start = df.index[0] - BDay(2) > start_date
+                if missing_start:
+                    regenerate_start_date = datetime.datetime.combine(start_date, datetime.datetime.min.time())
+                else:
+                    print(f"not missing start date {start_date} ->regenerate_start_date =  {df.index[-1]}")
+                    regenerate_start_date = df.index[-1]
+
+                missing_end = df.index[-1] + BDay(1) < end_date
+                if missing_end:
+                    regenerate_end_date = datetime.datetime.combine(end_date, datetime.datetime.max.time())
+                else:
+                    print(f"not missing end date {end_date} ->regenerate_end_date =  {df.index[0]}")
+                    regenerate_end_date = df.index[0]
+
+            print(
+                rf"WARNING: Exception get_candles_midprice_time {e} -> _regenerate_candles_midprice_time {num_units}{resolution} between {regenerate_start_date} and {regenerate_end_date}")
             self._regenerate_candles_midprice_time(
-                instrument_pk,
-                start_date,
-                end_date,
-                resolution,
-                num_units,
-                source_path,
-                first_hour,
-                last_hour,
+                instrument_pk=instrument_pk,
+                start_date=regenerate_start_date,
+                end_date=regenerate_end_date,
+                resolution=resolution,
+                num_units=num_units,
+                source_path=source_path,
+                first_hour=first_hour,
+                last_hour=last_hour,
             )
             df = self.get_candles_midprice_time(
                 instrument_pk=instrument_pk,
@@ -466,8 +775,16 @@ class TickDB:
             df = df.between_time(
                 start_time=rf"{first_hour}:00", end_time=rf"{last_hour}:00"
             )
+        if start_date == end_date:
+            print(
+                rf"WARNING: get_candles_midprice_time: start_date==end_date={start_date} -> adding 24 hours to end_date and 0 to start_date")
+            start_date = datetime.datetime.combine(start_date, datetime.datetime.min.time())
+            end_date = datetime.datetime.combine(end_date, datetime.datetime.max.time())
 
+        df.index = pd.to_datetime(df.index)
+        df.sort_index(inplace=True)
         df = df[start_date:end_date]
+
         return df
 
     def _get_manual_pandas(
@@ -487,18 +804,27 @@ class TickDB:
         # filename = "data.parquet"
         current_date = start_date
         output = None
-        while current_date < end_date:
-            current_date_str = current_date.strftime(self.date_str_format)
-            filename_complete = os.path.join(
-                source_path, f"date={current_date_str}", f"{filename}"
-            )
-            if os.path.exists(filename_complete):
-                df_temp = pd.read_parquet(filename_complete)
-                if output is None:
-                    output = df_temp
-                else:
-                    output = pd.concat([output, df_temp])
-            current_date += datetime.timedelta(days=1)
+        try:
+            while current_date < end_date:
+                current_date_str = current_date.strftime(self.date_str_format)
+                filename_complete = os.path.join(
+                    source_path, f"date={current_date_str}", f"{filename}"
+                )
+                if os.path.exists(filename_complete):
+                    try:
+                        df_temp = pd.read_parquet(filename_complete)
+                        if output is None:
+                            output = df_temp
+                        else:
+                            output = pd.concat([output, df_temp])
+                    except Exception as e1:
+                        print(f"ERROR _get_manual_pandas 1 {current_date_str} {filename} {filename_complete} {e1}")
+                        raise e1
+
+                current_date += datetime.timedelta(days=1)
+        except Exception as e:
+            print(f"ERROR _get_manual_pandas 2 {e}")
+            raise e
         return output
 
     def get_candles_time(
@@ -506,7 +832,7 @@ class TickDB:
             instrument_pk: str,
             start_date: datetime.datetime = default_start_date,
             end_date: datetime.datetime = default_end_date,
-            resolution: str = 'MIN',
+            resolution: CandleTimeResolution = CandleTimeResolution.MIN,
             num_units: int = 1,
             is_error_call: bool = False,
             first_hour=None,
@@ -515,15 +841,16 @@ class TickDB:
         import pyarrow.parquet as pq
 
         '''
-
+        Get candles by time from trades -> price from trades
         :param instrument_pk:
-        :param start_date:
-        :param end_date:
-        :param resolution: (str) Resolution type ('D', 'H', 'MIN', 'S')
+        :param start_date: included
+        :param end_date: included
+        :param resolution: (CandleTimeResolution) Resolution type ('D', 'H', 'MIN', 'S')
         :param num_units: (int) Number of resolution units (3 days for example, 2 hours)
         :param is_error_call:
         :return:
         '''
+        start_date, end_date = self._check_start_date_end_date(start_date, end_date)
 
         start_date_str = start_date.strftime(self.date_str_format)
         end_date_str = end_date.strftime(self.date_str_format)
@@ -536,14 +863,14 @@ class TickDB:
             print(f'creating candle_time {source_path} ...')
 
         try:
-            print(
-                "querying %s tick_db %s from %s to %s"
-                % (type_data, instrument_pk, start_date_str, end_date_str)
-            )
+            # print(
+            #     "querying %s tick_db %s from %s to %s"
+            #     % (type_data, instrument_pk, start_date_str, end_date_str)
+            # )
 
             dataset = pq.ParquetDataset(
                 source_path,
-                filters=[('date', '>=', start_date_str), ('date', '<', end_date_str)],
+                filters=[('date', '>=', int(start_date_str)), ('date', '<=', int(end_date_str))],
             )
             table = dataset.read()
             df = table.to_pandas()
@@ -586,7 +913,8 @@ class TickDB:
             df = df.between_time(
                 start_time=rf"{first_hour}:00", end_time=rf"{last_hour}:00"
             )
-
+        df.index = pd.to_datetime(df.index)
+        df.sort_index(inplace=True)
         return df
 
     def get_candles_tick(
@@ -597,6 +925,20 @@ class TickDB:
             number_of_ticks: int = 100,
             is_error_call: bool = False,
     ):
+        '''
+        Get candles by tick from trades -> price from trades
+        Parameters
+        ----------
+        instrument_pk
+        start_date : included
+        end_date : included
+        number_of_ticks
+        is_error_call
+
+        Returns
+        -------
+
+        '''
         import pyarrow as pq
 
         start_date_str = start_date.strftime(self.date_str_format)
@@ -608,7 +950,7 @@ class TickDB:
         try:
             dataset = pq.ParquetDataset(
                 source_path,
-                filters=[('date', '>=', start_date_str), ('date', '<', end_date_str)],
+                filters=[('date', '>=', int(start_date_str)), ('date', '<=', int(end_date_str))],
             )
             table = dataset.read()
             df = table.to_pandas()
@@ -648,6 +990,21 @@ class TickDB:
             volume: float = 100,
             is_error_call: bool = False,
     ):
+        '''
+        Get candles by volume from trades -> price from trades
+
+        Parameters
+        ----------
+        instrument_pk
+        start_date : included
+        end_date : included
+        volume
+        is_error_call
+
+        Returns
+        -------
+
+        '''
         import pyarrow.parquet as pq
 
         start_date_str = start_date.strftime(self.date_str_format)
@@ -658,7 +1015,7 @@ class TickDB:
         try:
             dataset = pq.ParquetDataset(
                 source_path,
-                filters=[('date', '>=', start_date_str), ('date', '<', end_date_str)],
+                filters=[('date', '>=', int(start_date_str)), ('date', '<=', int(end_date_str))],
             )
             table = dataset.read()
             df = table.to_pandas()
@@ -698,6 +1055,20 @@ class TickDB:
             dollar_value: float = 1000,
             is_error_call: bool = False,
     ):
+        '''
+
+        Parameters
+        ----------
+        instrument_pk
+        start_date : included
+        end_date : included
+        dollar_value
+        is_error_call
+
+        Returns
+        -------
+
+        '''
         import pyarrow.parquet as pq
 
         start_date_str = start_date.strftime(self.date_str_format)
@@ -708,7 +1079,7 @@ class TickDB:
         try:
             dataset = pq.ParquetDataset(
                 source_path,
-                filters=[('date', '>=', start_date_str), ('date', '<', end_date_str)],
+                filters=[('date', '>=', int(start_date_str)), ('date', '<=', int(end_date_str))],
             )
             table = dataset.read()
             df = table.to_pandas()

@@ -26,6 +26,7 @@ class AlgorithmParameters:
     first_hour = "firstHour"
     last_hour = "lastHour"
     seed = "seed"
+    synthetic_instrument_file = 'syntheticInstrumentFile'
 
 
 class Algorithm:
@@ -34,9 +35,11 @@ class Algorithm:
     PLOT_ROLLING_WINDOW_TICKS = 25
     FORMAT_SAVE_NUMBERS = '%.18e'
 
-    DELAY_MS = 65
-    FEES_COMMISSIONS_INCLUDED = True
+    DELAY_MS = 0
+    FEES_COMMISSIONS_INCLUDED = False
+    SEARCH_MATCH_MARKET_TRADES = False
     MULTITHREAD_CONFIGURATION = MultiThreadConfiguration.multithread
+
 
     @staticmethod
     def set_defaults_parameters(parameters: dict, DEFAULT_PARAMETERS: dict) -> dict:
@@ -44,14 +47,37 @@ class Algorithm:
             parameters.setdefault(default_key, default_value)
         return parameters
 
+    @staticmethod
+    def get_algorithm_info(NAME: str, algorithm_info: str):
+        if algorithm_info.startswith(NAME + "_"):
+            return algorithm_info
+
+        return NAME + "_" + algorithm_info
+
     def __init__(self, algorithm_info: str, parameters: dict) -> None:
         super().__init__()
         # self.NAME=''
         self.algorithm_info = algorithm_info
         self.parameters = copy.copy(parameters)
 
+
     def __reduce__(self):
-        return (self.__class__, (self.algorithm_info, self.parameters))
+        # pickeable
+        # copy all constant variables
+        class_state = {
+            'MAXTICKS_PLOT': Algorithm.MAXTICKS_PLOT,
+            'NAME': Algorithm.NAME,
+            'PLOT_ROLLING_WINDOW_TICKS': Algorithm.PLOT_ROLLING_WINDOW_TICKS,
+            'FORMAT_SAVE_NUMBERS': Algorithm.FORMAT_SAVE_NUMBERS,
+            'DELAY_MS': Algorithm.DELAY_MS,
+            'FEES_COMMISSIONS_INCLUDED': Algorithm.FEES_COMMISSIONS_INCLUDED,
+            'SEARCH_MATCH_MARKET_TRADES': Algorithm.SEARCH_MATCH_MARKET_TRADES,
+            'MULTITHREAD_CONFIGURATION': Algorithm.MULTITHREAD_CONFIGURATION
+        }
+        # Return tuple with class, constructor args, and state information
+        return (self.__class__,
+                (self.algorithm_info, self.parameters),
+                {'class_state': class_state})
 
     def get_json_param(self) -> dict:
         # import json
@@ -159,6 +185,7 @@ class Algorithm:
             delay_order_ms=self.DELAY_MS,
             multithread_configuration=self.MULTITHREAD_CONFIGURATION,
             fees_commissions_included=self.FEES_COMMISSIONS_INCLUDED,
+            search_match_market_trades=self.SEARCH_MATCH_MARKET_TRADES
         )
 
         # exponential reducing sigma
@@ -239,9 +266,8 @@ class Algorithm:
             return None
 
         trade_pnl_df = raw_trade_pnl_df.rename(columns=columns_rn)
-        trade_pnl_df['time'] = pd.to_datetime(
-            trade_pnl_df['timestamp'] * 1000000
-        )  # + pd.DateOffset(hours=1)
+        trade_pnl_df['timestamp'] = pd.to_numeric(trade_pnl_df['timestamp'], errors='coerce')
+        trade_pnl_df['time'] = pd.to_datetime(trade_pnl_df['timestamp'], unit='ms', errors='coerce')
 
         # trade_pnl_df['returns'] = trade_pnl_df['total_pnl'].pct_change().fillna(0)
         # trade_pnl_df['close_returns']=trade_pnl_df['close_pnl'].pct_change().fillna(0)
@@ -263,6 +289,7 @@ class Algorithm:
             [np.inf, -np.inf], np.nan
         )
         trade_pnl_df.ffill(inplace=True)
+        trade_pnl_df.fillna(0, inplace=True)
         before_len = len(trade_pnl_df)
         trade_pnl_df.dropna(axis=0, inplace=True)  # all the rest!
         if len(trade_pnl_df) == 0 and before_len > 0:
@@ -685,7 +712,7 @@ class Algorithm:
 
             textstr = '\n'.join(
                 (
-                    'trades =%d ' % (len(trade_pnl_df)),
+                    'trades =%d ' % (trade_pnl_df['numberTrades'].max()),
                     'open sharpe=%.4f   close_sharpe=%.4f' % (sharpe, realized_sharpe),
                     'open max_drawdown pct=%.5f duration_mins=%d'
                     % (open_dd / 100, duration_mins_open),
@@ -714,6 +741,112 @@ class Algorithm:
         parameters = copy.copy(self.parameters)
         return parameters
 
+    @staticmethod
+    def launch_test(
+            algorithm: 'Algorithm',
+            start_date: datetime.datetime,
+            end_date: datetime,
+            instrument_pk: str,
+            output_dict: dict,
+            multithread_configuration: int,
+            delay_ms: int,
+            fees_commissions_included: bool,
+            algorithm_number: int = 0,
+            clean_experience: bool = False,
+
+    ):
+        Algorithm.MULTITHREAD_CONFIGURATION = multithread_configuration
+        Algorithm.DELAY_MS = delay_ms
+        Algorithm.FEES_COMMISSIONS_INCLUDED = fees_commissions_included
+        backtest_result = algorithm.test(start_date=start_date, end_date=end_date,
+                                                        instrument_pk=instrument_pk,
+                                                        algorithm_number=algorithm_number,
+                                                        clean_experience=clean_experience)
+        output_dict[str(start_date.date())] = backtest_result
+
+        return start_date.date(), backtest_result
+
+    def test_batch(self, start_dates: list, end_dates: list, instrument_pk: str, max_simultaneous=1,
+                   algorithm_number: int = 0, clean_experience: bool = False) -> dict:
+        assert len(start_dates) == len(end_dates)
+        output_test = {}
+
+        import tqdm
+        if max_simultaneous == 1:
+            for i in tqdm.trange(0, len(start_dates), 1):
+                start_date = start_dates[i]
+                end_date = end_dates[i]
+                backtest_result = self.test(
+                    start_date=start_date,
+                    end_date=end_date,
+                    instrument_pk=instrument_pk,
+                    algorithm_number=algorithm_number,
+                    clean_experience=clean_experience,
+                )
+                output_test[start_date.date()] = backtest_result
+        else:
+            from utils.paralellization_util import process_jobs
+
+            jobs = []
+            for i in range(len(start_dates)):
+                start_date = start_dates[i]
+                end_date = end_dates[i]
+                jobs.append(
+                    {
+                        "func": Algorithm.launch_test,
+                        "algorithm": self,
+                        "start_date": start_date,
+                        "end_date": end_date,
+                        "instrument_pk": instrument_pk,
+                        "output_dict": output_test,
+                        "multithread_configuration": Algorithm.MULTITHREAD_CONFIGURATION,
+                        "delay_ms": Algorithm.DELAY_MS,
+                        "fees_commissions_included": Algorithm.FEES_COMMISSIONS_INCLUDED,
+                        "algorithm_number": algorithm_number + i,
+                        "clean_experience": clean_experience,
+                    }
+                )
+
+            results = process_jobs(jobs, num_threads=max_simultaneous)
+            output_dict = {}
+            for result in results:
+                output_dict[str(result[0])] = result[1]  # if key is not str -> corrupts df
+            return output_dict
+
+
+    def send_backtest_results_email(self, backtest_results: dict, plot_open=False, email:str=""):
+        from utils.email_util import EmailConnector
+
+        msg = ""
+        total_pnl = 0.0
+        total_entries = 0
+        files = []
+
+        for key, output_test in backtest_results.items():
+            plt_picture, backtest_df = self.plot_trade_results(output_test[self.algorithm_info], plot_open=plot_open)
+            if plt_picture is None:
+                print(rf"WARNING: plt_picture is None on {key} -> continue")
+                continue
+            file = f"backtest_results_{self.algorithm_info}_{key}.png"
+            plt_picture.savefig(file)
+            files.append(file)
+            total_pnl_day = backtest_df['close_pnl'].iloc[-1]
+            entries = backtest_df['numberTrades'].iloc[-1]
+            msg += rf"[{key}] PNL: {total_pnl_day:.4f} {entries} total trades"
+            # add breakline into msg
+            msg += '\n'
+
+            total_pnl += total_pnl_day
+            total_entries += entries
+
+        EmailConnector().send_email(recipient=email,
+                                    subject=f"{self.algorithm_info} backtests PNL: {total_pnl:.4f} {total_entries} total trades ",
+                                    body=f"{msg}",
+                                    file_append=files)
+
+        for file in files:
+            os.remove(file)
+
     def test(
             self,
             start_date: datetime.datetime,
@@ -721,6 +854,7 @@ class Algorithm:
             instrument_pk: str,
             algorithm_number: int = 0,
             clean_experience: bool = False,
+            raw_results: bool = False,
     ) -> dict:
         backtest_configuration = BacktestConfiguration(
             start_date=start_date,
@@ -729,6 +863,7 @@ class Algorithm:
             delay_order_ms=self.DELAY_MS,
             multithread_configuration=self.MULTITHREAD_CONFIGURATION,
             fees_commissions_included=self.FEES_COMMISSIONS_INCLUDED,
+            search_match_market_trades=self.SEARCH_MATCH_MARKET_TRADES
         )
         parameters = self.get_parameters()
 
@@ -758,7 +893,7 @@ class Algorithm:
         )
         output_dict = {}
         try:
-            output_dict = backtest_controller.run()
+            output_dict = backtest_controller.run(raw_results)
             if self.algorithm_info is not algorithm_name:
                 output_dict[self.algorithm_info] = output_dict[algorithm_name]
                 del output_dict[algorithm_name]

@@ -325,10 +325,11 @@ class StateUtils:
         for candle_state_horizon in range(candle_horizon - 1, -1, -1):
             candle_states.append('candle_close_%d' % candle_state_horizon)
 
-        candle_states.append('candle_ma')
-        candle_states.append('candle_std')
-        candle_states.append('candle_max')
-        candle_states.append('candle_min')
+        if candle_horizon > 0:
+            candle_states.append('candle_ma')
+            candle_states.append('candle_std')
+            candle_states.append('candle_max')
+            candle_states.append('candle_min')
 
         # adding multimarket parameters
         multimarket_states = StateUtils._get_multimarket_state_columns(

@@ -402,11 +402,11 @@ def parameter_tuning(
         job = {"func": executor_job.run}
         jobs.append(job)
 
-    from utils.paralellization_util import process_jobs_joblib, process_jobs_pathos
+    from utils.paralellization_util import process_jobs
 
     n_jobs = min(n_jobs, len(jobs))
-    process_jobs_joblib(jobs=jobs, num_threads=n_jobs)
-    # process_jobs_pathos(jobs=jobs, num_threads=n_jobs)
+    # process_jobs_joblib(jobs=jobs, num_threads=n_jobs)
+    process_jobs(jobs=jobs, num_threads=n_jobs)
 
     # #waiting finished
     # all_executors_are_finished=False

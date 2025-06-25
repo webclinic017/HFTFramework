@@ -50,6 +50,7 @@ class BaseModelType:
     TD3 = 'TD3'
     DDPG = 'DDPG'
     HER = 'HER'
+    DECISION_TRANSFORMER = 'DECISION_TRANSFORMER'
 
 
 class ModelPolicy:
@@ -145,6 +146,7 @@ DEFAULT_PARAMETERS = {
     AlgorithmParameters.first_hour: (0),
     AlgorithmParameters.last_hour: (24),
     AlgorithmParameters.ui: 0,
+    AlgorithmParameters.synthetic_instrument_file: "",
     #
     RlAlgorithmParameters.normalize_clip_obs: 40,  # 10.0 if >0 we are going to normalize observations
 
@@ -256,7 +258,7 @@ class RLAlgorithm(DQNAlgorithm):
         from configuration import get_reinforcement_learning_framework
         self._set_reinforcement_learning_action_type()
 
-        state_columns = self.get_number_of_state_columns(parameters)
+        state_columns = self.get_number_of_state_columns(parameters, print_it=True)
         action_columns = self.get_number_of_action_columns(parameters)
         self.core_rl_algorithm = CoreRlAlgorithm.create_core(
             get_reinforcement_learning_framework(),
@@ -312,6 +314,7 @@ class RLAlgorithm(DQNAlgorithm):
             trainingTargetIterationPeriod: int = None,
             algorithm_number: int = None,
             clean_experience: bool = False,
+            raw_results: bool = False,
     ) -> dict:
 
         self.change_state_type_if_required(instrument_pk, True)
@@ -434,6 +437,7 @@ class RLAlgorithm(DQNAlgorithm):
                 delay_order_ms=self.DELAY_MS,
                 multithread_configuration=self.MULTITHREAD_CONFIGURATION,
                 fees_commissions_included=self.FEES_COMMISSIONS_INCLUDED,
+                search_match_market_trades=self.SEARCH_MATCH_MARKET_TRADES,
                 bucle_run=self.TRAIN_BUCLE_RUN,
             )
 
@@ -498,6 +502,7 @@ class RLAlgorithm(DQNAlgorithm):
                 delay_order_ms=self.DELAY_MS,
                 multithread_configuration=self.MULTITHREAD_CONFIGURATION,
                 fees_commissions_included=self.FEES_COMMISSIONS_INCLUDED,
+                search_match_market_trades=self.SEARCH_MATCH_MARKET_TRADES,
                 bucle_run=self.TRAIN_BUCLE_RUN,
             )
 
@@ -653,6 +658,7 @@ class RLAlgorithm(DQNAlgorithm):
             delay_order_ms=self.DELAY_MS,
             multithread_configuration=self.MULTITHREAD_CONFIGURATION,
             fees_commissions_included=self.FEES_COMMISSIONS_INCLUDED,
+            search_match_market_trades=self.SEARCH_MATCH_MARKET_TRADES,
             bucle_run=self.TRAIN_BUCLE_RUN,
         )
 
@@ -1039,6 +1045,7 @@ class RLAlgorithm(DQNAlgorithm):
             delay_order_ms=self.DELAY_MS,
             multithread_configuration=self.MULTITHREAD_CONFIGURATION,
             fees_commissions_included=self.FEES_COMMISSIONS_INCLUDED,
+            search_match_market_trades=self.SEARCH_MATCH_MARKET_TRADES,
             bucle_run=False,  # we want to finish after one iteration
         )
 

@@ -20,7 +20,6 @@ import dill
 import joblib
 import pickle
 
-
 sns.set_theme()
 import pylab
 import json
@@ -41,7 +40,6 @@ from database.tick_db import *
 from backtest.parameter_tuning.ga_configuration import GAConfiguration
 from backtest.parameter_tuning.ga_parameter_tuning import GAParameterTuning
 
-
 # import plotly.graph_objects as go
 from notebooks.email_util import EmailConnector
 from configuration import *
@@ -51,12 +49,14 @@ from utils.date_utils import *
 from backtest.pnl_utils import *
 
 from trading_algorithms.trading_algorithms_import import *
+from configuration import DEFAULT_CANDLES_NUM_UNITS
 
 plt.rcParams['figure.figsize'] = [12, 8]
 plt.rcParams['figure.dpi'] = 100  # 200 e.g. is really fine, but slower
 # pd.options.plotting.backend ='matplotlib'# "plotly"
 pd.set_option('display.max_rows', 50)
 pd.set_option('display.max_columns', 50)
+
 
 
 # pd.set_option('display.width', 1000)
@@ -94,7 +94,6 @@ def load_notebook_session(session_name: str):
 
 
 def plot_with_dark_style():
-
     # # plot_with_style()
     # # import jtplot module in notebook
     # from jupyterthemes import jtplot
@@ -126,6 +125,6 @@ def plot_with_dark_style():
 # plot_with_dark_style()
 plt.ion()  # plt show not required
 
-
 # from utils.tensorflow_utils import *
 from backtest.parameter_tuning.optuna.optuna_configuration import OptunaConfiguration
+from database.tick_db import *

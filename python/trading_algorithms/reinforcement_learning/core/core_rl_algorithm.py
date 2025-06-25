@@ -171,4 +171,4 @@ class CoreRlAlgorithm:
 
         from trading_algorithms.reinforcement_learning.rl_algorithm import BaseModelType
 
-        return self.base_model_str in [BaseModelType.DQN, BaseModelType.PPO]
+        return self.base_model_str in [BaseModelType.DQN, BaseModelType.PPO, BaseModelType.DECISION_TRANSFORMER]

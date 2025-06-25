@@ -7,7 +7,7 @@ from backtest.input_configuration import (
     BacktestConfiguration,
     AlgorithmConfiguration,
     InputConfiguration,
-    JAR_PATH, MultiThreadConfiguration,
+    JAR_PATH,
 )
 import os
 import copy
@@ -20,6 +20,7 @@ class ConstantSpreadParameters:
     quantity_limit = 'quantityLimit'
     level = 'level'  # 0 - 4
     skew_level = 'skewLevel'
+    min_quantity_follow = 'minQuantityFollow'
 
 
 DEFAULT_PARAMETERS = {
@@ -28,9 +29,11 @@ DEFAULT_PARAMETERS = {
     AlgorithmParameters.first_hour: (0),
     AlgorithmParameters.last_hour: (24),
     AlgorithmParameters.ui: 0,
-    ConstantSpreadParameters.level: (0),  # 0=1-5
+    AlgorithmParameters.synthetic_instrument_file: "",
+    ConstantSpreadParameters.level: (0),  # 0 - 4 , 0 is best
     ConstantSpreadParameters.quantity_limit: (-1),
     ConstantSpreadParameters.skew_level: (0),  # 0-4 -4-0
+    ConstantSpreadParameters.min_quantity_follow: 0,
 }
 
 
@@ -45,7 +48,7 @@ class ConstantSpread(Algorithm):
             parameters=parameters, DEFAULT_PARAMETERS=DEFAULT_PARAMETERS
         )
         super().__init__(
-            algorithm_info=self.NAME + "_" + algorithm_info, parameters=parameters
+            algorithm_info=Algorithm.get_algorithm_info(self.NAME, algorithm_info), parameters=parameters
         )
 
     def get_parameters(self) -> dict:
@@ -70,6 +73,7 @@ class ConstantSpread(Algorithm):
             delay_order_ms=self.DELAY_MS,
             multithread_configuration=self.MULTITHREAD_CONFIGURATION,
             fees_commissions_included=self.FEES_COMMISSIONS_INCLUDED,
+            search_match_market_trades=self.SEARCH_MATCH_MARKET_TRADES
         )
         output_list = []
         for iteration in range(iterations):
@@ -139,21 +143,32 @@ class ConstantSpread(Algorithm):
 
 if __name__ == '__main__':
     constant_spread = ConstantSpread(algorithm_info='test_main')
-    constant_spread.MULTITHREAD_CONFIGURATION = MultiThreadConfiguration.singlethread
-    constant_spread.DELAY_MS = 0.0
-    constant_spread.FEES_COMMISSIONS_INCLUDED = False
 
+    # ga_configuration = GAConfiguration
+    # ga_configuration.population = 3
+    # best_param_dict, summary_df = constant_spread.parameter_tuning(
+    #     instrument_pk='btcusdt_binance',
+    #     start_date=datetime.datetime(year=2020, day=9, month=12),
+    #     end_date=datetime.datetime(year=2020, day=9, month=12),
+    #     parameters_min={"quantity_limit": 5, "level": 0},
+    #     parameters_max={"quantity_limit": 25, "level": 4},
+    #     generations=3,
+    #     max_simultaneous=1,
+    #     ga_configuration=ga_configuration,
+    # )
+    # constant_spread.set_parameters(parameters=best_param_dict)
     import matplotlib.pyplot as plt
-    # parameters_dict = DEFAULT_PARAMETERS
-    # # parameters_dict['skewLevel'] = -3
-    # constant_spread.set_parameters(parameters_dict)
-    output_test = constant_spread.test(
-        instrument_pk='btcusdt_kraken',
-        start_date=datetime.datetime(year=2023, day=13, month=11, hour=7),
-        end_date=datetime.datetime(year=2023, day=13, month=11, hour=15),
-    )
-    name_output = constant_spread.get_test_name(name=constant_spread.NAME)
-    backtest_df = output_test[name_output]
-    constant_spread.plot_trade_results(raw_trade_pnl_df=backtest_df)
-    import matplotlib.pyplot as plt
-    plt.show()
+
+    for i in range(2):
+        plt.close()
+        parameters_dict = DEFAULT_PARAMETERS
+        parameters_dict[ConstantSpreadParameters.skew_level] = -3
+        constant_spread.set_parameters(parameters_dict)
+        output_test = constant_spread.test(
+            instrument_pk='btcusdt_binance',
+            start_date=datetime.datetime(year=2020, day=9, month=12, hour=9),
+            end_date=datetime.datetime(year=2020, day=9, month=12, hour=15),
+        )
+        name_output = constant_spread.get_test_name(name=constant_spread.NAME)
+        backtest_df = output_test[name_output]
+        constant_spread.plot_trade_results(raw_trade_pnl_df=backtest_df)

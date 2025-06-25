@@ -70,17 +70,43 @@ def nested_parts(num_atoms, num_threads, upper_triang=False):
     return parts
 
 
-def process_jobs_joblib(jobs, task=None, num_threads=24, prefer='threads'):
+def process_jobs(jobs, task=None, num_threads=24, pool_class=ProcessPool):
+    '''
+
+    Parameters
+    ----------
+    jobs
+    task
+    num_threads
+    pool_class: ProcessPool , ThreadPool , ParallelPool
+
+    Returns
+    -------
+
+    '''
+    return process_jobs_joblib(jobs, task, num_threads, 'processes')
+    # return process_jobs_pathos(jobs, task, num_threads, pool_class)
+
+
+def process_jobs_joblib(jobs, task=None, num_threads=24, prefer=None):
     '''
     prefer: str in {'processes', 'threads'} or None, default: None
     '''
+    import multiprocessing
+    if num_threads < 0:
+        # get number of cpus*2 - num_threads
+        num_threads = multiprocessing.cpu_count() * 2 - num_threads
+
+    num_threads = max(num_threads, 1)
+    num_threads = max(num_threads, len(jobs))
+    num_threads = min(num_threads, multiprocessing.cpu_count() * 2)
+
     if num_threads == 1:
         out = process_jobs_(jobs)
     else:
         from joblib import Parallel, delayed
 
         # joblib
-        # outputs = Parallel(n_jobs=numThreads, prefer="threads")(delayed(expandCall)(i) for i in jobs)
         outputs = Parallel(n_jobs=num_threads, prefer=prefer)(
             delayed(expand_call)(i) for i in jobs
         )
@@ -89,6 +115,14 @@ def process_jobs_joblib(jobs, task=None, num_threads=24, prefer='threads'):
 
 
 def process_jobs_pathos(jobs, task=None, num_threads=24, pool_class=ThreadPool):
+    import multiprocessing
+    if num_threads < 0:
+        # get number of cpus*2 - num_threads
+        num_threads = multiprocessing.cpu_count() * 2 - num_threads
+    num_threads = max(num_threads, 1)
+    num_threads = max(num_threads, len(jobs))
+    num_threads = min(num_threads, multiprocessing.cpu_count() * 2)
+
     if num_threads == 1:
         out = process_jobs_(jobs)
         return out
@@ -98,7 +132,7 @@ def process_jobs_pathos(jobs, task=None, num_threads=24, pool_class=ThreadPool):
         if task is None:
             task = jobs[0]["func"].__name__
         # pathos
-        pool = pool_class(processes=num_threads, maxtasksperchild=1000)
+        pool = pool_class(processes=num_threads)
         return _process_job(pool, jobs)
 
 

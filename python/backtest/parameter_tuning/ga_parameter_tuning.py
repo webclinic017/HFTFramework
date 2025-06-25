@@ -18,7 +18,7 @@ from backtest.parameter_tuning.ga_optimization_utils import (
     random_param_dict,
     crossover_param_dict,
 )
-
+from utils.pandas_utils.dataframe_utils import join_by_row
 
 class GAParameterTuning:
     INCREASE_POPULATION = True
@@ -441,19 +441,19 @@ class GAParameterTuning:
                 ]
 
                 # group by time
-                from configuration import SHARPE_BACKTEST_FREQ
+                # from configuration import SHARPE_BACKTEST_FREQ
 
-                equity_curve = (
-                    equity_curve.groupby(pd.Grouper(freq=SHARPE_BACKTEST_FREQ))
-                    .last()
-                    .fillna(method='ffill')
-                )
+                # equity_curve = (
+                #     equity_curve.groupby(pd.Grouper(freq=SHARPE_BACKTEST_FREQ))
+                #     .last()
+                #     .ffill()
+                # )
                 try:
                     sharpe = get_sharpe(equity_curve)
                     dd = get_max_drawdown(equity_curve)
                     ulcer = get_ulcer_index(equity_curve)
                     sortino = get_sortino(equity_curve)
-                    trades = len(output_dict[algorithm_info])
+                    trades = backtest_df['numberTrades'].max()
                     pnl = output_dict[algorithm_info][
                         get_score_enum_csv_column(ScoreEnum.total_pnl)
                     ].iloc[-1]
@@ -526,9 +526,7 @@ class GAParameterTuning:
         # filter for the next generation
         self.population_df = new_generation_df
 
-        self.population_df_out = self.population_df_out.append(
-            new_generation_df, ignore_index=True
-        )
+        self.population_df_out = join_by_row(self.population_df_out, new_generation_df)
 
         if self.INCREASE_POPULATION:
             self.population_df = self.population_df_out
