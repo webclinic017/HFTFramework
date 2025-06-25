@@ -30,7 +30,6 @@ import org.apache.logging.log4j.Logger;
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartTheme;
 
-
 import javax.swing.*;
 import java.io.File;
 import java.text.DateFormat;
@@ -41,9 +40,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static com.lambda.investing.Configuration.*;
+import static com.lambda.investing.Configuration.RANDOM_GENERATOR;
+import static com.lambda.investing.Configuration.SET_RANDOM_SEED;
 import static com.lambda.investing.model.Util.fromJsonString;
-import static com.lambda.investing.model.portfolio.Portfolio.*;
+import static com.lambda.investing.model.portfolio.Portfolio.REQUESTED_PORTFOLIO_INFO;
+import static com.lambda.investing.model.portfolio.Portfolio.REQUESTED_POSITION_INFO;
 import static org.jfree.chart.ChartFactory.getChartTheme;
 
 public abstract class Algorithm extends AlgorithmParameters implements MarketDataListener, ExecutionReportListener, CandleListener {
@@ -176,6 +177,18 @@ public abstract class Algorithm extends AlgorithmParameters implements MarketDat
         return parameters;
     }
 
+    protected String getSyntheticInstrumentPath() {
+        String syntheticInstrumentPath = getParameterString(parameters, "syntheticInstrumentFile");
+        if (syntheticInstrumentPath != null && syntheticInstrumentPath.isEmpty()) {
+            syntheticInstrumentPath = null;
+        }
+        if (syntheticInstrumentPath != null && !isBacktest && !syntheticInstrumentPath.contains(":")) {
+            syntheticInstrumentPath = Configuration.INPUT_PATH + "\\" + syntheticInstrumentPath;
+        }
+
+        return syntheticInstrumentPath;
+    }
+
     public Map<String, ExecutionReport> clientOrderIdLastCompletelyFillReceived;
     private static int HISTORICAL_TRADES_SAVE = 50;
     private boolean plotStopHistorical = false;
@@ -254,6 +267,7 @@ public abstract class Algorithm extends AlgorithmParameters implements MarketDat
         erTradesProcessed = EvictingQueue.create(DEFAULT_QUEUE_HISTORICAL_TRADES);
         historicalOrdersRequestSent = new AlgorithmUtils.MaxSizeHashMap<String, OrderRequest>(
                 DEFAULT_QUEUE_HISTORICAL_ORDER_REQUEST);
+        logger.info("CONFIGURATION:\n{}", Configuration.print());
 
         if (algorithmConnectorConfiguration != null) {
             isBacktest = false;
@@ -1149,6 +1163,15 @@ public abstract class Algorithm extends AlgorithmParameters implements MarketDat
         }
         depth = removeMe(depth);
         checkDepth(depth);
+        //check depth is different than before depth
+        InstrumentManager instrumentManager = getInstrumentManager(depth.getInstrument());
+        Depth lastDepth = instrumentManager.getLastDepth();
+        if (lastDepth != null && lastDepth.equalsContent(depth)) {
+            //avoid double counting
+            return false;
+        }
+
+
         //update cache
         portfolioManager.updateDepth(depth);
         algorithmNotifier.notifyObserversOnUpdateDepth(depth);//to stateManager - to state
@@ -1157,7 +1180,7 @@ public abstract class Algorithm extends AlgorithmParameters implements MarketDat
             return false;
         }
 
-        InstrumentManager instrumentManager = getInstrumentManager(depth.getInstrument());
+
         instrumentManager.setLastDepth(depth);
         addStatistics(RECEIVE_STATS + " depth." + depth.getInstrument());
         depthReceived.incrementAndGet();
@@ -1183,6 +1206,7 @@ public abstract class Algorithm extends AlgorithmParameters implements MarketDat
                 //if verb is Buy remove that price from the depth in the bid side
                 output.removeOrder(price, quantity, verb, getAlgorithmInfo());
             }
+            output.cleanNullLevels();
             return output;
 
         } catch (CloneNotSupportedException e) {
@@ -1299,7 +1323,7 @@ public abstract class Algorithm extends AlgorithmParameters implements MarketDat
         logger.info("{} saving {} trades in {}_(instrument_pk).csv", getCurrentTime(), portfolioManager.numberOfTrades, basePath);
 
         portfolioManager.getTradesTableAndSave(basePath);
-        logger.info("{} saved in {}_(instrument_pk).csv", getCurrentTime(), portfolioManager.numberOfTrades, basePath);
+        logger.info("{} saved in {}_(instrument_pk).csv", getCurrentTime(), basePath);
     }
 
     protected void printSummaryResults() {
@@ -1497,6 +1521,8 @@ public abstract class Algorithm extends AlgorithmParameters implements MarketDat
     protected void addToPersist(ExecutionReport executionReport) {
         PnlSnapshot pnlSnapshot = portfolioManager.addTrade(executionReport);
         algorithmNotifier.notifyObserversOnUpdatePnlSnapshot(pnlSnapshot);
+        algorithmNotifier.notifyObserversOnUpdatePortfolioSnapshot(portfolioManager.getPortfolioSnapshot());
+
         if (!isBacktest) {
             printRowTrade(executionReport);
             //			System.out.println(

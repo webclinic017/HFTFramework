@@ -190,8 +190,10 @@ public abstract class AbstractMarketDataConnectorPublisher implements MarketData
         topic = topic + "." + TypeMessage.depth.name();
         //		logger.debug("notify DEPTH {}",depth.toString());
         connectorPublisher.publish(connectorConfiguration, TypeMessage.depth, topic, depthJson);
-        if (statistics != null)
+        if (statistics != null) {
             statistics.addStatistics(topic);
+        }
+        depth.delete();//return to the pool
     }
 
     @Override
@@ -200,8 +202,10 @@ public abstract class AbstractMarketDataConnectorPublisher implements MarketData
         topic = topic + "." + TypeMessage.trade.name();
         //		logger.debug("notify TRADE {}",trade.toString());
         connectorPublisher.publish(connectorConfiguration, TypeMessage.trade, topic, tradeJson);
-        if (statistics != null)
+        if (statistics != null) {
             statistics.addStatistics(topic);
+        }
+        trade.delete();//return to the pool
     }
 
     public synchronized void notifyCommand(String topic, Command command) {

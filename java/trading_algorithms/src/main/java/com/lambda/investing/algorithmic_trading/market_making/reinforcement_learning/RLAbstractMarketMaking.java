@@ -1,11 +1,15 @@
 package com.lambda.investing.algorithmic_trading.market_making.reinforcement_learning;
 
 import com.lambda.investing.ArrayUtils;
-import com.lambda.investing.algorithmic_trading.*;
+import com.lambda.investing.algorithmic_trading.AlgorithmConnectorConfiguration;
+import com.lambda.investing.algorithmic_trading.hedging.NoHedgeManager;
 import com.lambda.investing.algorithmic_trading.market_making.MarketMakingAlgorithm;
-import com.lambda.investing.algorithmic_trading.reinforcement_learning.*;
-
-import com.lambda.investing.algorithmic_trading.reinforcement_learning.state.*;
+import com.lambda.investing.algorithmic_trading.reinforcement_learning.ScoreEnum;
+import com.lambda.investing.algorithmic_trading.reinforcement_learning.SingleInstrumentRLAlgorithm;
+import com.lambda.investing.algorithmic_trading.reinforcement_learning.state.DiscreteTAState;
+import com.lambda.investing.algorithmic_trading.reinforcement_learning.state.MarketState;
+import com.lambda.investing.algorithmic_trading.reinforcement_learning.state.MultiMarketState;
+import com.lambda.investing.algorithmic_trading.reinforcement_learning.state.StateManager;
 import com.lambda.investing.model.asset.Instrument;
 import com.lambda.investing.model.candle.Candle;
 import com.lambda.investing.model.candle.CandleType;
@@ -39,10 +43,6 @@ public abstract class RLAbstractMarketMaking extends SingleInstrumentRLAlgorithm
     protected long horizonMinMsTick;
 
     protected String[] stateColumnsFilter = null;
-
-
-    protected Depth lastDepth = null;
-
 
     protected MarketMakingAlgorithm algorithm;
 
@@ -78,7 +78,7 @@ public abstract class RLAbstractMarketMaking extends SingleInstrumentRLAlgorithm
 
 
     //abstract methods
-    protected abstract void updateCurrentCustomColumn(String instrumentPk);
+    protected abstract void updateCurrentCustomColumn();
 
 
     public void resetAlgorithm() {
@@ -93,6 +93,7 @@ public abstract class RLAbstractMarketMaking extends SingleInstrumentRLAlgorithm
     public void setParameters(Map<String, Object> parameters) {
         super.setParameters(parameters);
         this.parameters = parameters;
+
 
         this.stopActionOnFilled = getParameterIntOrDefault(parameters, "stopActionOnFilled", DEFAULT_STOP_ACTION_FILLED ? 1 : 0) == 1;
         this.stepSeconds = getParameterInt(parameters, "stepSeconds");
@@ -136,6 +137,16 @@ public abstract class RLAbstractMarketMaking extends SingleInstrumentRLAlgorithm
             }
         }
 
+        //        Hedger on underlying algorithm
+        syntheticInstrumentFile = null;
+        enableAutoHedger = false;
+
+    }
+
+    public Set<Instrument> getInstruments() {
+        Set<Instrument> instruments = super.getInstruments();
+        instruments.addAll(algorithm.getInstruments());
+        return instruments;
     }
 
 
@@ -252,6 +263,9 @@ public abstract class RLAbstractMarketMaking extends SingleInstrumentRLAlgorithm
         super.init();
         initAlgorithm();
         stateManager = new StateManager(this, state);
+
+        enableAutoHedger = false;//avoid double hedging -> algorithm hedgeManager
+        hedgeManager = new NoHedgeManager();
     }
 
     protected void initAlgorithm() {
@@ -276,9 +290,6 @@ public abstract class RLAbstractMarketMaking extends SingleInstrumentRLAlgorithm
 
     @Override
     public boolean onTradeUpdate(Trade trade) {
-        if (!trade.getInstrument().equalsIgnoreCase(instrument.getPrimaryKey())) {
-            return false;
-        }
         boolean output = super.onTradeUpdate(trade);
         algorithm.onTradeUpdate(trade);
         return output;
@@ -294,14 +305,6 @@ public abstract class RLAbstractMarketMaking extends SingleInstrumentRLAlgorithm
 
     @Override
     public boolean onDepthUpdate(Depth depth) {
-
-        if (!depth.getInstrument().equals(instrument.getPrimaryKey())) {
-            return false;
-        }
-        if (lastDepth == null) {
-            this.lastDepth = depth;
-        }
-
         if (stateManager != null && stateManager.isReady() && isReady()) {
             synchronized (this) {
                 if (timestampStartStep != DEFAULT_LAST_Q) {
@@ -314,9 +317,8 @@ public abstract class RLAbstractMarketMaking extends SingleInstrumentRLAlgorithm
             }
 
         }
-        updateCurrentCustomColumn(depth.getInstrument());
-
         boolean output = super.onDepthUpdate(depth);
+        updateCurrentCustomColumn();
         algorithm.onDepthUpdate(depth);
 
         return output;
@@ -327,7 +329,9 @@ public abstract class RLAbstractMarketMaking extends SingleInstrumentRLAlgorithm
         boolean output = true;
         try {
             output = super.onExecutionReportUpdate(executionReport);
-            algorithm.onExecutionReportUpdate(executionReport);
+            if (!executionReport.getInstrument().equals(instrument.getPrimaryKey())) {
+                return output;
+            }
 
         } catch (Exception e) {
             logger.error("error treating ER ", e);
@@ -412,10 +416,10 @@ public abstract class RLAbstractMarketMaking extends SingleInstrumentRLAlgorithm
 
     @Override
     protected double getLastMidPrice() {
-        if (lastDepth == null) {
+        if (getLastDepth(instrument) == null) {
             return 0;
         }
-        return lastDepth.getMidPrice();
+        return getLastDepth(instrument).getMidPrice();
     }
 
     @Override

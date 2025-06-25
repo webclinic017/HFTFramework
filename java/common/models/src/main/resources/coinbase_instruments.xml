@@ -63,9 +63,9 @@
 
 
     <util:list id="coinbase_instruments" value-type="com.lambda.investing.model.asset.Instrument">
-        <ref bean="btcusdt_coinbase"/>
-        <ref bean="ethusdt_coinbase"/>
-        <ref bean="ethbtc_coinbase"/>
+        <!--        <ref bean="btcusdt_coinbase"/>-->
+        <!--        <ref bean="ethusdt_coinbase"/>-->
+        <!--        <ref bean="ethbtc_coinbase"/>-->
         <ref bean="btceur_coinbase"/>
         <ref bean="etheur_coinbase"/>
     </util:list>

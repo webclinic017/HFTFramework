@@ -42,26 +42,28 @@
     <loggers>
 
 
-        <Logger name="com.lambda.investing.data_manager" level="debug">
+        <AsyncLogger name="com.lambda.investing.data_manager" level="debug">
             <AppenderRef ref="file"/>
-        </Logger>
+        </AsyncLogger>
 
         <!--Console info output-->
-        <root level="INFO">
+        <!--        <root level="INFO">-->
+        <!--            <appender-ref ref="file"/>-->
+        <!--        </root>-->
+        <AsyncLogger name="com.lambda" level="INFO" additivity="false">
             <appender-ref ref="file"/>
-        </root>
-
+        </AsyncLogger>
 
         <!--Configure LatencyStatistics logs and Statistics logs into fileStatistics info level-->
-        <Logger name="com.lambda.investing.trading_engine_connector.LatencyStatistics" level="info">
+        <AsyncLogger name="com.lambda.investing.trading_engine_connector.LatencyStatistics" level="info">
             <AppenderRef ref="fileStatistics"/>
-        </Logger>
-        <Logger name="com.lambda.investing.trading_engine_connector.SlippageStatistics" level="info">
+        </AsyncLogger>
+        <AsyncLogger name="com.lambda.investing.trading_engine_connector.SlippageStatistics" level="info">
             <AppenderRef ref="fileStatistics"/>
-        </Logger>
-        <Logger name="com.lambda.investing.market_data_connector.Statistics" level="info">
+        </AsyncLogger>
+        <AsyncLogger name="com.lambda.investing.market_data_connector.Statistics" level="info">
             <AppenderRef ref="fileStatistics"/>
-        </Logger>
+        </AsyncLogger>
 
 
     </loggers>

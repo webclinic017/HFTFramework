@@ -4,11 +4,8 @@ import com.lambda.investing.ArrayUtils;
 import com.lambda.investing.TimeSeriesQueue;
 import javafx.util.Pair;
 import lombok.Getter;
-import org.apache.commons.math3.stat.descriptive.DescriptiveStatistics;
 
 import java.util.*;
-
-import static com.lambda.investing.ArrayUtils.GetPrimitiveArrayDouble;
 
 public class TimeseriesUtils {
 
@@ -64,12 +61,17 @@ public class TimeseriesUtils {
     }
 
     public static double GetVariance(Double[] serie, boolean bias) {
+        if (serie.length == 1) {
+            return 0;
+        }
+
         double mean = GetMean(serie);
         double sqDiff = 0;
         for (int i = 0; i < serie.length; i++) {
             sqDiff += Math.pow((serie[i] - mean), 2);
         }
         double den = bias ? serie.length - 1 : serie.length;
+
         double output = (double) sqDiff / den;
         return output;
     }

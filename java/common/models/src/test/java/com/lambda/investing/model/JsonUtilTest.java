@@ -1,7 +1,5 @@
 package com.lambda.investing.model;
 
-import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONWriter;
 import com.lambda.investing.model.market_data.Depth;
 import com.lambda.investing.model.market_data.Trade;
 import com.lambda.investing.model.trading.*;
@@ -19,20 +17,20 @@ class JsonUtilTest {
     String instrumentPk = "BTCUSD";
 
     private Depth createDepth(double bestBid, double bestAsk, double bestBidQty, double bestAskQty) {
-        Depth depth = new Depth();
+        Depth depth = Depth.getInstance();
         depth.setTimestamp(System.currentTimeMillis());
         depth.setInstrument(instrumentPk);
         depth.setLevels(1);
-        Double[] asks = new Double[]{bestAsk, bestAsk + 0.01};
+        double[] asks = new double[]{bestAsk, bestAsk + 0.01};
         depth.setAsks(asks);
 
-        Double[] bids = new Double[]{bestBid, bestAsk - 0.01};
+        double[] bids = new double[]{bestBid, bestAsk - 0.01};
         depth.setBids(bids);
 
-        Double[] asksQ = new Double[]{bestAskQty, bestAskQty};
+        double[] asksQ = new double[]{bestAskQty, bestAskQty};
         depth.setAsksQuantities(asksQ);
 
-        Double[] bidsQ = new Double[]{bestBidQty, bestBidQty};
+        double[] bidsQ = new double[]{bestBidQty, bestBidQty};
         depth.setBidsQuantities(bidsQ);
 
         String[] algorithms = new String[]{Depth.ALGORITHM_INFO_MM, Depth.ALGORITHM_INFO_MM};
@@ -45,7 +43,7 @@ class JsonUtilTest {
     }
 
     private Trade createTrade(double price, double quantity, Verb verb) {
-        Trade trade = new Trade();
+        Trade trade = Trade.getInstance();
         trade.setTimestamp(System.currentTimeMillis());
         trade.setInstrument(instrumentPk);
         trade.setPrice(price);

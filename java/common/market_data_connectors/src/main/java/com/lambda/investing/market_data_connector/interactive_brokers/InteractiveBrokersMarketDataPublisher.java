@@ -57,7 +57,7 @@ public class InteractiveBrokersMarketDataPublisher extends AbstractMarketDataCon
 
 
     public void tickByTickAllLast(int reqId, int tickType, long time, double price, Decimal size, TickAttribLast tickAttribLast, String exchange, String specialConditions) {
-        Trade trade = new Trade();
+        Trade trade = Trade.getInstance();
         trade.setPrice(price);
         trade.setQuantity(size.value().doubleValue());
         trade.setTimestamp(time * 1000);
@@ -69,11 +69,11 @@ public class InteractiveBrokersMarketDataPublisher extends AbstractMarketDataCon
 
 
     public void tickByTickBidAsk(int reqId, long time, double bidPrice, double askPrice, Decimal bidSize, Decimal askSize, TickAttribBidAsk tickAttribBidAsk) {
-        Depth depth = new Depth();
-        depth.setAsks(new Double[]{askPrice});
-        depth.setBids(new Double[]{bidPrice});
-        depth.setAsksQuantities(new Double[]{askSize.value().doubleValue()});
-        depth.setBidsQuantities(new Double[]{bidSize.value().doubleValue()});
+        Depth depth = Depth.getInstancePool();
+        depth.setAsks(new double[]{askPrice});
+        depth.setBids(new double[]{bidPrice});
+        depth.setAsksQuantities(new double[]{askSize.value().doubleValue()});
+        depth.setBidsQuantities(new double[]{bidSize.value().doubleValue()});
         depth.setTimestamp(time * 1000);
 
         String instrumentPK = interactiveBrokersBrokerConnector.getInstrumentPk(reqId);

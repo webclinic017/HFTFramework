@@ -2,18 +2,18 @@ package com.lambda.investing.algorithmic_trading.market_making.avellaneda_stoiko
 
 import com.lambda.investing.ArrayUtils;
 import com.lambda.investing.TimeSeriesQueue;
-import com.lambda.investing.algorithmic_trading.*;
+import com.lambda.investing.algorithmic_trading.AlgorithmConnectorConfiguration;
+import com.lambda.investing.algorithmic_trading.AlgorithmState;
+import com.lambda.investing.algorithmic_trading.InstrumentManager;
+import com.lambda.investing.algorithmic_trading.TimeseriesUtils;
 import com.lambda.investing.algorithmic_trading.market_making.MarketMakingAlgorithm;
 import com.lambda.investing.model.asset.Instrument;
 import com.lambda.investing.model.exception.LambdaTradingException;
 import com.lambda.investing.model.market_data.Depth;
 import com.lambda.investing.model.market_data.Trade;
 import com.lambda.investing.model.trading.*;
-import org.apache.curator.shaded.com.google.common.collect.EvictingQueue;
-import org.apache.curator.shaded.com.google.common.collect.Queues;
 
 import java.util.Map;
-import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 
 
@@ -174,7 +174,7 @@ public class AvellanedaStoikov extends MarketMakingAlgorithm {
         spreadCalculationType = SpreadCalculation.valueOf(typeSpread);
 
         if (spreadCalculationType == SpreadCalculation.GueantTapia && kCalculationType != KCalculation.Pct) {
-            logger.warn("setting GueantTapia kCalculation pct");
+            logger.warn("changing kCalculationType {} to kCalculation pct because of  spreadCalculationType=  GueantTapia", kCalculationType);
             kCalculationType = KCalculation.Pct;
         }
         if (spreadCalculationType == SpreadCalculation.GueantTapia && this.aDefault == null) {
@@ -231,6 +231,11 @@ public class AvellanedaStoikov extends MarketMakingAlgorithm {
         if (!super.onTradeUpdate(trade)) {
             return false;
         }
+
+        if (!trade.getInstrument().equals(instrument.getPrimaryKey())) {
+            return false;
+        }
+
         if (counterStartingMinuteMs == 0) {
             counterStartingMinuteMs = getCurrentTimestamp();
         }
@@ -484,8 +489,9 @@ public class AvellanedaStoikov extends MarketMakingAlgorithm {
 
     protected double getPositionScaled() {
         double position = (getPosition(this.instrument) - targetPosition);
-        double tickMultiplierScale = this.instrument.getQuantityTick();
-        return position / tickMultiplierScale;
+//        double tickMultiplierScale = this.instrument.getQuantityTick();
+//        return position / tickMultiplierScale;
+        return position;
     }
 
     public double getFirstTermSpreadGueantTapia(double k) {
@@ -512,7 +518,7 @@ public class AvellanedaStoikov extends MarketMakingAlgorithm {
 
         double[] ks = calculateK();
         if (ks == null) {
-            logger.error("something is wrong calculating kValues , returns null");
+            logger.error("something is wrong calculating kValues kCalculationType:{} kDefault:{} changeKPeriodSeconds:{} , returns null", kCalculationType, kDefault, changeKPeriodSeconds);
             return null;
         }
         double kTotal = ks[0];
@@ -567,6 +573,9 @@ public class AvellanedaStoikov extends MarketMakingAlgorithm {
     @Override
     public boolean onDepthUpdate(Depth depth) {
         if (!super.onDepthUpdate(depth)) {
+            return false;
+        }
+        if (!depth.getInstrument().equals(instrument.getPrimaryKey())) {
             return false;
         }
         updateQuotesContainer(depth);
@@ -648,6 +657,9 @@ public class AvellanedaStoikov extends MarketMakingAlgorithm {
             quoteRequest.setBidQuantity(this.quantity);
             quoteRequest.setAskQuantity(this.quantity);
 
+            String spreadsToMid = String.format("spreadBid:%.8f spreadAsk:%.8f", depth.getMidPrice() - bidPrice, askPrice - depth.getMidPrice());
+            quoteRequest.setFreeText(spreadsToMid);
+
             //remove side disable!
             for (Map.Entry<Verb, Boolean> entry : sideActive.entrySet()) {
                 boolean isActive = entry.getValue();
@@ -689,29 +701,29 @@ public class AvellanedaStoikov extends MarketMakingAlgorithm {
                 return output;
             }
 
-            int askLevel = depth.getLevelAskPrice(askPrice);
-            int bidLevel = depth.getLevelBidPrice(bidPrice);
+            int askLevel = depth.getLevelAskFromPrice(askPrice);
+            int bidLevel = depth.getLevelBidFromPrice(bidPrice);
 
             int newAskLevel = askLevel + (int) Math.round(skew);
             int newBidLevel = bidLevel - (int) Math.round(skew);
             //boundary to best and worst
-            Double[] asks = depth.getAsks();
-            Double[] bids = depth.getBids();
+            double[] asks = depth.getAsks();
+            double[] bids = depth.getBids();
 
-            int maxLevelAsk = ArrayUtils.getNonNullLength(asks) - 1;
-            int maxLevelBid = ArrayUtils.getNonNullLength(bids) - 1;
+            int maxLevelAsk = depth.getAskLevels() - 1;
+            int maxLevelBid = depth.getBidLevels() - 1;
             newAskLevel = Math.max(Math.min(newAskLevel, maxLevelAsk), -1);
             newBidLevel = Math.max(Math.min(newBidLevel, maxLevelBid), -1);
 
             if (newAskLevel >= 0) {
-                Double outAskPrice = asks[newAskLevel];
-                while (outAskPrice == null) {
+                double outAskPrice = asks[newAskLevel];
+                while (Depth.isDefaultValue(outAskPrice)) {
                     newAskLevel++;
-                    outAskPrice = asks[newAskLevel];
                     if (newAskLevel > maxLevelAsk) {
                         outAskPrice = depth.getWorstAsk();
                         break;
                     }
+                    outAskPrice = asks[newAskLevel];
                 }
                 askPrice = outAskPrice;
 
@@ -720,14 +732,14 @@ public class AvellanedaStoikov extends MarketMakingAlgorithm {
             }
 
             if (newBidLevel >= 0) {
-                Double outBidPrice = bids[newBidLevel];
-                while (outBidPrice == null) {
+                double outBidPrice = bids[newBidLevel];
+                while (Depth.isDefaultValue(outBidPrice)) {
                     newBidLevel++;
-                    outBidPrice = bids[newBidLevel];
                     if (newBidLevel > maxLevelBid) {
                         outBidPrice = depth.getWorstBid();
                         break;
                     }
+                    outBidPrice = bids[newBidLevel];
                 }
                 bidPrice = outBidPrice;
             } else {
@@ -880,7 +892,7 @@ public class AvellanedaStoikov extends MarketMakingAlgorithm {
             return varianceDefault;
         }
 
-        if (midpricesQueue == null || midpricesQueue.size() < midpricePeriodWindow) {
+        if (midpricesQueue == null || midpricePeriodWindow < 0 || midpricesQueue.size() < midpricePeriodWindow) {
             return null;
         }
 
@@ -934,25 +946,24 @@ public class AvellanedaStoikov extends MarketMakingAlgorithm {
     @Override
     public boolean onExecutionReportUpdate(ExecutionReport executionReport) {
         boolean output = super.onExecutionReportUpdate(executionReport);
-        if (!instrument.getPrimaryKey().equals(executionReport.getInstrument())) {
-            logger.info("Hedge execution report {}", executionReport);
-            return output;
-        }
-        if (executionReport.getExecutionReportStatus().equals(ExecutionReportStatus.CompletellyFilled)
-                || executionReport.getExecutionReportStatus().equals(ExecutionReportStatus.PartialFilled)) {
-            logger.debug("trade arrived");
-            try {
-                getQuoteManager(executionReport.getInstrument()).unquoteSide(executionReport.getVerb());
-            } catch (LambdaTradingException e) {
-                logger.error("can't unquote verb {} => cancel manual", executionReport.getVerb(), e);
-                //cancel all this side active
-                cancelAllVerb(instrument, executionReport.getVerb());
-            }
-            //disable this side
-            if (DISABLE_ON_HIT) {
-                autoEnableSideTime = true;//need to be enable to autodisable it in time
-                logger.info("disable {} side at {}", executionReport.getVerb(), getCurrentTime());
-                sideActive.put(executionReport.getVerb(), false);
+        if (executionReport.getInstrument().equalsIgnoreCase(this.instrument.getPrimaryKey())) {
+            //no logic for hedging
+            if (executionReport.getExecutionReportStatus().equals(ExecutionReportStatus.CompletellyFilled)
+                    || executionReport.getExecutionReportStatus().equals(ExecutionReportStatus.PartialFilled)) {
+                logger.debug("trade arrived");
+                try {
+                    getQuoteManager(executionReport.getInstrument()).unquoteSide(executionReport.getVerb());
+                } catch (LambdaTradingException e) {
+                    logger.error("can't unquote verb {} => cancel manual", executionReport.getVerb(), e);
+                    //cancel all this side active
+                    cancelAllVerb(instrument, executionReport.getVerb());
+                }
+                //disable this side
+                if (DISABLE_ON_HIT) {
+                    autoEnableSideTime = true;//need to be enable to autodisable it in time
+                    logger.info("disable {} side at {}", executionReport.getVerb(), getCurrentTime());
+                    sideActive.put(executionReport.getVerb(), false);
+                }
             }
 
         }

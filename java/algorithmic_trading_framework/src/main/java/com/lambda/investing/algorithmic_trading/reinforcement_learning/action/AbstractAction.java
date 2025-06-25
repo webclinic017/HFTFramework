@@ -12,6 +12,10 @@ public abstract class AbstractAction {
 		return 1;
 	}
 
+	public int getNumberActionColumnsDifferent() {
+		return getNumberActionColumns();
+	}
+
 	public abstract int getNumberActions();
 
 	public abstract int getAction(double[] actionArr);

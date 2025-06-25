@@ -73,18 +73,18 @@ public class Orderbook {
 	 */
 	public synchronized Depth getOrderbookDepth(Instrument instrument) {
 
-		Depth output = new Depth();
+		Depth output = Depth.getInstance();
 		output.setTimestamp(time);
 		output.setInstrument(instrument.getPrimaryKey());
 		int bidLevels = Math.min(bids.getDepth(), Depth.MAX_DEPTH);
 		int askLevels = Math.min(asks.getDepth(), Depth.MAX_DEPTH);
 		//		int levels = Math.max(askLevels, bidLevels);
 
-		Double[] bidArray = new Double[bidLevels];
-		Double[] askArray = new Double[askLevels];
+		double[] bidArray = new double[bidLevels];
+		double[] askArray = new double[askLevels];
 
-		Double[] bidQtyArray = new Double[bidLevels];
-		Double[] askQtyArray = new Double[askLevels];
+		double[] bidQtyArray = new double[bidLevels];
+		double[] askQtyArray = new double[askLevels];
 
 		List<String>[] bidAlgorithmInfo = new List[bidLevels];
 		List<String>[] askAlgorithmInfo = new List[askLevels];

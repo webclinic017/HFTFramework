@@ -1,6 +1,6 @@
 package com.lambda.investing.connector.ordinary;
 
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import com.lambda.investing.LambdaThreadFactory;
 import com.lambda.investing.connector.*;
 import com.lambda.investing.model.messaging.TypeMessage;
 import org.apache.commons.lang3.exception.ExceptionUtils;
@@ -19,9 +19,7 @@ public class OrdinaryConnectorPublisherProvider implements ConnectorPublisher, C
 	private Map<ConnectorConfiguration, AtomicInteger> counterMessagesSent;
 	private Map<ConnectorConfiguration, AtomicInteger> counterMessagesNotSent;
 	Logger logger = LogManager.getLogger(OrdinaryConnectorPublisherProvider.class);
-	ThreadFactory namedThreadFactory = new ThreadFactoryBuilder()
-			.setNameFormat("OrdinaryConnectorPublisherProvider -%d")
-			.build();
+	ThreadFactory namedThreadFactory = LambdaThreadFactory.createThreadFactory("OrdinaryConnectorPublisherProvider");
 
 	ThreadPoolExecutor senderPool;
 	private Integer priority = null;
@@ -50,10 +48,7 @@ public class OrdinaryConnectorPublisherProvider implements ConnectorPublisher, C
 	protected void initSenderPool(int publishThreads, Integer priority) {
 		//TODO change it to maintain order by instrument
 		this.publishThreads = publishThreads;
-		ThreadFactoryBuilder threadFactoryBuilder = new ThreadFactoryBuilder();
-		threadFactoryBuilder.setNameFormat(this.name + " -%d").build();
-		threadFactoryBuilder.setPriority(priority);
-		namedThreadFactory = threadFactoryBuilder.build();
+		namedThreadFactory = LambdaThreadFactory.createThreadFactory(this.name, priority);
 		if (this.publishThreads < 0) {
 			//infinite
 			senderPool = (ThreadPoolExecutor) Executors.newCachedThreadPool(namedThreadFactory);

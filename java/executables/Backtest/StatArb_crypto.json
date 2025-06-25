@@ -1,0 +1,11 @@
+{
+  "etheur_kraken": 0.8125466704368591,
+  "half_life": 0.6232246810979027,
+  "period": 1,
+  "half_life_seconds": 1121.804425976225,
+  "mean": -3.706756429577851e-11,
+  "std": 0.0023077623918652534,
+  "intercept": -8.885835995897651e-05,
+  "seconds_candles": 180,
+  "regression_price_type": "Returns"
+}

@@ -9,12 +9,10 @@ import com.lambda.investing.model.exception.LambdaTradingException;
 import com.lambda.investing.model.market_data.Depth;
 import com.lambda.investing.model.trading.*;
 import lombok.Getter;
-import org.apache.curator.shaded.com.google.common.collect.EvictingQueue;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.util.Map;
-import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 
 public abstract class AbstractSideQuoting extends SingleInstrumentAlgorithm {

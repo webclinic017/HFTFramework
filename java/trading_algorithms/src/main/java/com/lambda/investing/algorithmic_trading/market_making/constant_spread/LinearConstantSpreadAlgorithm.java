@@ -14,157 +14,170 @@ import java.util.Map;
 
 public class LinearConstantSpreadAlgorithm extends SingleInstrumentAlgorithm {
 
-	private static double MAX_TICKS_MIDPRICE_PRICE_DEV = 100;
-	private int level;//0-4
-	private double quantity;
-	private double quantityLimit;
-	private double lastValidSpread, lastValidMid = 0.01;
-	private double deltaInventory;
-	private double lastAsk, lastBid;
+    private static double MAX_TICKS_MIDPRICE_PRICE_DEV = 100;
+    private int level;//0-4
+    private double quantity;
+    private double quantityLimit;
+    private double lastValidSpread, lastValidMid = 0.01;
+    private double deltaInventory;
+    private double lastAsk, lastBid;
 
-	public LinearConstantSpreadAlgorithm(AlgorithmConnectorConfiguration algorithmConnectorConfiguration,
-			String algorithmInfo, Map<String, Object> parameters) {
-		super(algorithmConnectorConfiguration, algorithmInfo, parameters);
-		setParameters(parameters);
-	}
+    public LinearConstantSpreadAlgorithm(AlgorithmConnectorConfiguration algorithmConnectorConfiguration,
+                                         String algorithmInfo, Map<String, Object> parameters) {
+        super(algorithmConnectorConfiguration, algorithmInfo, parameters);
+        setParameters(parameters);
+    }
 
-	public LinearConstantSpreadAlgorithm(String algorithmInfo, Map<String, Object> parameters) {
-		super(algorithmInfo, parameters);
-		setParameters(parameters);
-	}
+    public LinearConstantSpreadAlgorithm(String algorithmInfo, Map<String, Object> parameters) {
+        super(algorithmInfo, parameters);
+        setParameters(parameters);
+    }
 
-	@Override public void setParameters(Map<String, Object> parameters) {
-		super.setParameters(parameters);
-		this.level = getParameterIntOrDefault(parameters, "level", 1);
-		this.quantity = getParameterDouble(parameters, "quantity");
-		this.quantityLimit = getParameterDoubleOrDefault(parameters, "quantityLimit", this.quantity * 10);
+    @Override
+    public void setParameters(Map<String, Object> parameters) {
+        super.setParameters(parameters);
+        this.level = getParameterIntOrDefault(parameters, "level", 1);
+        this.quantity = getParameterDouble(parameters, "quantity");
+        this.quantityLimit = getParameterDoubleOrDefault(parameters, "quantityLimit", this.quantity * 10);
 
-		if (quantity >= quantityLimit) {
-			logger.warn("wrong quantity {} >=  {} quantityLimit -> set quantityLimit to 10x", quantity, quantityLimit);
-			quantityLimit = 10 * this.quantity;
-		}
+        if (quantity >= quantityLimit) {
+            logger.warn("wrong quantity {} >=  {} quantityLimit -> set quantityLimit to 10x", quantity, quantityLimit);
+            quantityLimit = 10 * this.quantity;
+        }
 
-		this.deltaInventory = this.quantity / this.quantityLimit;
-	}
+        this.deltaInventory = this.quantity / this.quantityLimit;
+    }
 
-	@Override public String printAlgo() {
-		return String.format("%s  level=%d    quantity=%.5f   quantityLimit=%.5f", algorithmInfo, level, quantity,
-				quantityLimit);
-	}
+    @Override
+    public String printAlgo() {
+        return String.format("%s  level=%d    quantity=%.5f   quantityLimit=%.5f", algorithmInfo, level, quantity,
+                quantityLimit);
+    }
 
-	@Override public boolean onDepthUpdate(Depth depth) {
-		if (!super.onDepthUpdate(depth) || !depth.isDepthFilled()) {
-			stop();
-			return false;
-		} else {
-			start();
-		}
+    @Override
+    public boolean onDepthUpdate(Depth depth) {
+        boolean output = super.onDepthUpdate(depth);
 
-		try {
-			double currentSpread = 0;
-			double midPrice = 0;
-			double askPrice = 0.0;
-			double bidPrice = 0.0;
-			try {
-				currentSpread = depth.getSpread();
-				midPrice = depth.getMidPrice();
-				askPrice = depth.getAsks()[level];
-				bidPrice = depth.getBids()[level];
-			} catch (Exception e) {
-				return false;
-			}
+        if (!output || !depth.getInstrument().equals(instrument.getPrimaryKey())) {
+            return false;
+        }
 
-			if (currentSpread == 0) {
-				currentSpread = lastValidSpread;
-			} else {
-				lastValidSpread = currentSpread;
-			}
+        if (!depth.isDepthFilled()) {
+            logger.info("stopping algorithm because depth is incomplete!");
+            stop();
+            return false;
+        } else {
+            start();
+        }
 
-			if (midPrice == 0) {
-				midPrice = lastValidMid;
-			} else {
-				lastValidMid = midPrice;
-			}
 
-			askPrice = Precision.round(askPrice, instrument.getNumberDecimalsPrice());
-			double position = getPosition(this.instrument);
-			double askQty = this.quantity;
-			if (position < 0) {
-				askQty = this.quantity - Math.abs(position) * deltaInventory;//linearly decreasing with inventory
-			}
+        try {
+            double currentSpread = 0;
+            double midPrice = 0;
+            double askPrice = 0.0;
+            double bidPrice = 0.0;
+            try {
+                currentSpread = depth.getSpread();
+                midPrice = depth.getMidPrice();
+                askPrice = depth.getAsks()[level];
+                bidPrice = depth.getBids()[level];
+            } catch (Exception e) {
+                return false;
+            }
 
-			bidPrice = Precision.round(bidPrice, instrument.getNumberDecimalsPrice());
-			double bidQty = this.quantity;
-			if (position > 0) {
-				bidQty = this.quantity - Math.abs(position) * deltaInventory;//linearly decreasing with inventory
-			}
+            if (currentSpread == 0) {
+                currentSpread = lastValidSpread;
+            } else {
+                lastValidSpread = currentSpread;
+            }
 
-			//Check not crossing the mid price!
-			askPrice = Math.max(askPrice, depth.getMidPrice() + instrument.getPriceTick());
-			bidPrice = Math.min(bidPrice, depth.getMidPrice() - instrument.getPriceTick());
+            if (midPrice == 0) {
+                midPrice = lastValidMid;
+            } else {
+                lastValidMid = midPrice;
+            }
 
-			//			Check worst price
-			//			double maxAskPrice = depth.getMidPrice() + MAX_TICKS_MIDPRICE_PRICE_DEV * instrument.getPriceTick();
-			//			askPrice = Math.min(askPrice, maxAskPrice);
-			//			double minBidPrice = depth.getMidPrice() - MAX_TICKS_MIDPRICE_PRICE_DEV * instrument.getPriceTick();
-			//			bidPrice = Math.max(bidPrice, minBidPrice);
+            askPrice = Precision.round(askPrice, instrument.getNumberDecimalsPrice());
+            double position = getPosition(this.instrument);
+            double askQty = this.quantity;
+            if (position < 0) {
+                askQty = this.quantity - Math.abs(position) * deltaInventory;//linearly decreasing with inventory
+            }
 
-			//create quote request
-			QuoteRequest quoteRequest = createQuoteRequest(this.instrument);
-			quoteRequest.setQuoteRequestAction(QuoteRequestAction.On);
-			quoteRequest.setBidPrice(bidPrice);
-			quoteRequest.setAskPrice(askPrice);
-			quoteRequest.setBidQuantity(bidQty);
-			quoteRequest.setAskQuantity(askQty);
+            bidPrice = Precision.round(bidPrice, instrument.getNumberDecimalsPrice());
+            double bidQty = this.quantity;
+            if (position > 0) {
+                bidQty = this.quantity - Math.abs(position) * deltaInventory;//linearly decreasing with inventory
+            }
 
-			try {
-				sendQuoteRequest(quoteRequest);
+            //Check not crossing the mid price!
+            askPrice = Math.max(askPrice, depth.getMidPrice() + instrument.getPriceTick());
+            bidPrice = Math.min(bidPrice, depth.getMidPrice() - instrument.getPriceTick());
 
-				//				logger.info("quoting  {} bid {}@{}   ask {}@{}", instrument.getPrimaryKey(), quantity, bidPrice,
-				//						quantity, askPrice);
+            //			Check worst price
+            //			double maxAskPrice = depth.getMidPrice() + MAX_TICKS_MIDPRICE_PRICE_DEV * instrument.getPriceTick();
+            //			askPrice = Math.min(askPrice, maxAskPrice);
+            //			double minBidPrice = depth.getMidPrice() - MAX_TICKS_MIDPRICE_PRICE_DEV * instrument.getPriceTick();
+            //			bidPrice = Math.max(bidPrice, minBidPrice);
 
-			} catch (LambdaTradingException e) {
-				logger.error("can't quote {} bid {}@{}   ask {}@{}", instrument.getPrimaryKey(), quantity, bidPrice,
-						quantity, askPrice, e);
-			}
-		} catch (Exception e) {
-			logger.error("error onDepth  : ", e);
-		}
+            //create quote request
+            QuoteRequest quoteRequest = createQuoteRequest(this.instrument);
+            quoteRequest.setQuoteRequestAction(QuoteRequestAction.On);
+            quoteRequest.setBidPrice(bidPrice);
+            quoteRequest.setAskPrice(askPrice);
+            quoteRequest.setBidQuantity(bidQty);
+            quoteRequest.setAskQuantity(askQty);
 
-		return true;
-	}
+            try {
+                sendQuoteRequest(quoteRequest);
 
-	@Override public void sendOrderRequest(OrderRequest orderRequest) throws LambdaTradingException {
-		//		logger.info("sendOrderRequest {} {}", orderRequest.getOrderRequestAction(), orderRequest.getClientOrderId());
-		super.sendOrderRequest(orderRequest);
+                //				logger.info("quoting  {} bid {}@{}   ask {}@{}", instrument.getPrimaryKey(), quantity, bidPrice,
+                //						quantity, askPrice);
 
-	}
+            } catch (LambdaTradingException e) {
+                logger.error("can't quote {} bid {}@{}   ask {}@{}", instrument.getPrimaryKey(), quantity, bidPrice,
+                        quantity, askPrice, e);
+            }
+        } catch (Exception e) {
+            logger.error("error onDepth  : ", e);
+        }
 
-	@Override public boolean onExecutionReportUpdate(ExecutionReport executionReport) {
-		super.onExecutionReportUpdate(executionReport);
+        return true;
+    }
 
-		//		logger.info("onExecutionReportUpdate  {}  {}:  {}", executionReport.getExecutionReportStatus(),
-		//				executionReport.getClientOrderId(), executionReport.getRejectReason());
+    @Override
+    public void sendOrderRequest(OrderRequest orderRequest) throws LambdaTradingException {
+        //		logger.info("sendOrderRequest {} {}", orderRequest.getOrderRequestAction(), orderRequest.getClientOrderId());
+        super.sendOrderRequest(orderRequest);
 
-		//		boolean isTrade = executionReport.getExecutionReportStatus().equals(ExecutionReportStatus.CompletellyFilled)
-		//				|| executionReport.getExecutionReportStatus().equals(ExecutionReportStatus.PartialFilled);
+    }
 
-		//		if (isTrade) {
-		//			try {
-		//				//				logger.info("{} received {}  {}@{}",executionReport.getExecutionReportStatus(),executionReport.getVerb(),executionReport.getLastQuantity(),executionReport.getPrice());
-		//				QuoteRequest quoteRequest = createQuoteRequest(executionReport.getInstrument());
-		//				quoteRequest.setQuoteRequestAction(QuoteRequestAction.Off);
-		//				sendQuoteRequest(quoteRequest);
-		//				//				logger.info("unquoting because of trade in {} {}", executionReport.getVerb(),
-		//				//						executionReport.getClientOrderId());
-		//			} catch (LambdaTradingException e) {
-		//				logger.error("cant unquote {}", instrument.getPrimaryKey(), e);
-		//			}
-		//		}
-		return true;
-	}
-	//
-	//	@Override public AlgorithmState getAlgorithmState() {
-	//		return AlgorithmState.STARTED;
-	//	}
+    @Override
+    public boolean onExecutionReportUpdate(ExecutionReport executionReport) {
+        super.onExecutionReportUpdate(executionReport);
+
+        //		logger.info("onExecutionReportUpdate  {}  {}:  {}", executionReport.getExecutionReportStatus(),
+        //				executionReport.getClientOrderId(), executionReport.getRejectReason());
+
+        //		boolean isTrade = executionReport.getExecutionReportStatus().equals(ExecutionReportStatus.CompletellyFilled)
+        //				|| executionReport.getExecutionReportStatus().equals(ExecutionReportStatus.PartialFilled);
+
+        //		if (isTrade) {
+        //			try {
+        //				//				logger.info("{} received {}  {}@{}",executionReport.getExecutionReportStatus(),executionReport.getVerb(),executionReport.getLastQuantity(),executionReport.getPrice());
+        //				QuoteRequest quoteRequest = createQuoteRequest(executionReport.getInstrument());
+        //				quoteRequest.setQuoteRequestAction(QuoteRequestAction.Off);
+        //				sendQuoteRequest(quoteRequest);
+        //				//				logger.info("unquoting because of trade in {} {}", executionReport.getVerb(),
+        //				//						executionReport.getClientOrderId());
+        //			} catch (LambdaTradingException e) {
+        //				logger.error("cant unquote {}", instrument.getPrimaryKey(), e);
+        //			}
+        //		}
+        return true;
+    }
+    //
+    //	@Override public AlgorithmState getAlgorithmState() {
+    //		return AlgorithmState.STARTED;
+    //	}
 }

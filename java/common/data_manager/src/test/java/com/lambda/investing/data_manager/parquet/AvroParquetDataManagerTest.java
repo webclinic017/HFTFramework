@@ -4,7 +4,6 @@ import com.lambda.investing.ArrayUtils;
 import com.lambda.investing.Configuration;
 import com.lambda.investing.model.asset.Currency;
 import com.lambda.investing.model.asset.Instrument;
-import com.lambda.investing.model.market_data.CSVable;
 import com.lambda.investing.model.market_data.DepthParquet;
 import com.lambda.investing.model.market_data.Trade;
 
@@ -126,7 +125,7 @@ public class AvroParquetDataManagerTest {
 
 
         List<Trade> listToPersist = new ArrayList<>();
-        Trade tradeParquet = new Trade();
+        Trade tradeParquet = Trade.getInstance();
         tradeParquet.setQuantity(1.5);
         tradeParquet.setPrice(2.5);
 

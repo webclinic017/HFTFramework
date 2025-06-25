@@ -1,5 +1,6 @@
 package com.lambda.investing.algorithmic_trading;
 
+import com.lambda.investing.Configuration;
 import com.lambda.investing.model.asset.Instrument;
 import com.lambda.investing.model.market_data.Depth;
 import com.lambda.investing.model.portfolio.Portfolio;
@@ -9,23 +10,21 @@ import org.apache.commons.lang.ArrayUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import tech.tablesaw.api.*;
+import tech.tablesaw.plotly.Plot;
+import tech.tablesaw.plotly.api.TimeSeriesPlot;
+import tech.tablesaw.plotly.components.Figure;
 
-import java.io.*;
+import java.io.File;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-//
-import tech.tablesaw.plotly.Plot;
-import tech.tablesaw.plotly.api.TimeSeriesPlot;
-import tech.tablesaw.plotly.components.Figure;
-
 import static com.lambda.investing.algorithmic_trading.PnlSnapshot.UPDATE_HISTORICAL_LOCK;
 
 public class PortfolioManager {
 
-    private static boolean TRADES_CSV_COMPLETE = false;
+
     private Logger logger = LogManager.getLogger(PortfolioManager.class);
     private Algorithm algorithm;
     //	private Map<String, List<ExecutionReport>> instrumentToExecutionReportsFilled;
@@ -35,10 +34,7 @@ public class PortfolioManager {
     private boolean isBacktest;
     private boolean isPaper;
     private Portfolio portfolio;
-    private Map<String, Long> lastDepthUpdateTimestamp;
 
-
-    private static long MIN_DEPTH_UPDATE_DELTA_MS = 100;
 
     public long numberOfTrades = 0;
 
@@ -49,8 +45,11 @@ public class PortfolioManager {
         this.algorithm = algorithm;
         this.isBacktest = this.algorithm.isBacktest;
         this.isPaper = this.algorithm.isPaper;
-        lastDepthUpdateTimestamp = new ConcurrentHashMap<>();
         reset();
+    }
+
+    public PortfolioSnapshot getPortfolioSnapshot() {
+        return new PortfolioSnapshot(algorithm.algorithmInfo, instrumentPnlSnapshotMap);
     }
 
     public PnlSnapshot getLastPnlSnapshot(String instrumentPk) {
@@ -93,7 +92,7 @@ public class PortfolioManager {
         //set initial values
         for (String instrumentPk : portfolio.getPortfolioInstruments().keySet()) {
             PortfolioInstrument portfolioInstrument = portfolio.getPortfolioInstruments().get(instrumentPk);
-            PnlSnapshot pnlSnapshot = instrumentPnlSnapshotMap.getOrDefault(instrumentPk, new PnlSnapshotOrders());
+            PnlSnapshot pnlSnapshot = instrumentPnlSnapshotMap.getOrDefault(instrumentPk, new PnlSnapshotOrders(instrumentPk));
             pnlSnapshot.setNetPosition(portfolioInstrument.getPosition());
             pnlSnapshot.setAlgorithmInfo(this.algorithm.algorithmInfo);
             pnlSnapshot.setNumberOfTrades((int) portfolioInstrument.getNumberTrades());
@@ -116,23 +115,29 @@ public class PortfolioManager {
         numberOfTrades = 0;
     }
 
+    private PnlSnapshot getPnlSnapshot(String instrumentPk) {
+        PnlSnapshot pnlSnapshot = instrumentPnlSnapshotMap.get(instrumentPk);
+        if (pnlSnapshot == null) {
+            pnlSnapshot = new PnlSnapshotOrders(instrumentPk);
+            pnlSnapshot.setBacktest(isBacktest);
+            pnlSnapshot.setPaper(isPaper);
+            instrumentPnlSnapshotMap.put(instrumentPk, pnlSnapshot);
+        }
+        return pnlSnapshot;
+    }
+
     public void updateDepth(Depth depth) {
         String key = getInstrumentKey(depth.getInstrument());
 
         //check if it is needed to update
-        Long lastDepthUpdateTimestamp = this.lastDepthUpdateTimestamp.getOrDefault(key, 0L);
-        if (depth.getTimestamp() - lastDepthUpdateTimestamp < MIN_DEPTH_UPDATE_DELTA_MS) {
+//        Long lastDepthUpdateTimestamp = this.lastDepthUpdateTimestamp.getOrDefault(key, 0L);
+        PnlSnapshot pnlSnapshot = getPnlSnapshot(key);
+        long lastPnlUpdate = pnlSnapshot.getLastTimestampUpdate();
+        if (Configuration.PORTFOLIO_MANAGER_UPDATE_FREQUENCY_MS > 0 && depth.getTimestamp() - lastPnlUpdate < Configuration.PORTFOLIO_MANAGER_UPDATE_FREQUENCY_MS) {
             return;
         }
-        this.lastDepthUpdateTimestamp.put(key, depth.getTimestamp());
-
-
-        PnlSnapshot pnlSnapshot = instrumentPnlSnapshotMap.getOrDefault(key, new PnlSnapshotOrders());
-        pnlSnapshot.setBacktest(isBacktest);
-        pnlSnapshot.setPaper(isPaper);
-        pnlSnapshot.updateDepth(depth);//pnlSnaphsot update historicals
-        instrumentPnlSnapshotMap.put(key, pnlSnapshot);
-
+        pnlSnapshot.updateDepth(depth);// not updateHistoricals inside
+        pnlSnapshot.updateHistoricals(depth.getTimestamp());
         updateCustomHistoricals(depth.getInstrument(), depth.getTimestamp(), pnlSnapshot);
     }
 
@@ -166,17 +171,12 @@ public class PortfolioManager {
         //		instrumentToExecutionReportsFilled.put(executionReport.getInstrument(), executionReportList);
         String keyInstrument = getInstrumentKey(executionReport.getInstrument());
 
-        PnlSnapshot pnlSnapshot = instrumentPnlSnapshotMap.getOrDefault(keyInstrument, new PnlSnapshotOrders());
-        pnlSnapshot.setBacktest(isBacktest);
-        pnlSnapshot.setPaper(isPaper);
+        PnlSnapshot pnlSnapshot = getPnlSnapshot(keyInstrument);
         pnlSnapshot.setAlgorithmInfo(executionReport.getAlgorithmInfo());
-        pnlSnapshot.updateExecutionReport(executionReport);
-
+        pnlSnapshot.updateExecutionReport(executionReport);// updateHistoricals inside
         updateCustomHistoricals(keyInstrument, executionReport.getTimestampCreation(), pnlSnapshot);
 
-        instrumentPnlSnapshotMap.put(keyInstrument, pnlSnapshot);
         numberOfTrades++;
-
         return pnlSnapshot;
     }
 
@@ -324,12 +324,16 @@ public class PortfolioManager {
                     List<Double> historicalTotalPnl = getSortedValuesDouble(pnlSnapshot.historicalTotalPnl);
                     List<Double> historicalFee = getSortedValuesDouble(pnlSnapshot.historicalFee);
                     List<Double> historicalPrice = getSortedValuesDouble(pnlSnapshot.historicalPrice);
+                    List<Double> historicalBid = getSortedValuesDouble(pnlSnapshot.historicalBidPrice);
+                    List<Double> historicalAsk = getSortedValuesDouble(pnlSnapshot.historicalAskPrice);
+                    List<Double> historicalMid = getSortedValuesDouble(pnlSnapshot.historicalMidPrice);
                     List<Double> historicalQuantity = getSortedValuesDouble(pnlSnapshot.historicalQuantity);
                     List<String> historicalAlgorithmInfo = getSortedValuesString(pnlSnapshot.historicalAlgorithmInfo);
                     List<String> historicalInstrumentPk = getSortedValuesString(pnlSnapshot.historicalInstrumentPk);
                     List<Integer> numberTrades = getSortedValuesInteger(pnlSnapshot.historicalNumberOfTrades);
                     List<String> historicalVerb = getSortedValuesString(pnlSnapshot.historicalVerb);
                     List<String> historicalClOrdId = getSortedValuesString(pnlSnapshot.historicalClOrdId);
+
                     //timestamp conversion
                     Long[] timestampArr = new Long[timestamp.size()];
                     timestampArr = timestamp.toArray(timestampArr);
@@ -343,8 +347,8 @@ public class PortfolioManager {
                     }
 
                     logger.info(
-                            "getTradesTable has {} rows -> timestamp:{} verb:{} algorithmInfo:{} fee:{} price:{} quantity:{} netPosition:{} avgOpenPrice:{} netInvestment:{} historicalRealizedPnl:{} historicalUnrealizedPnl:{} historicalTotalPnl:{} numberTrades:{} instrumentPk:{}",
-                            dates.length, timestamp.size(), historicalVerb.size(), historicalAlgorithmInfo.size(),
+                            "getTradesTable {} has {} rows -> timestamp:{} verb:{} algorithmInfo:{} fee:{} price:{} quantity:{} netPosition:{} avgOpenPrice:{} netInvestment:{} historicalRealizedPnl:{} historicalUnrealizedPnl:{} historicalTotalPnl:{} numberTrades:{} instrumentPk:{}",
+                            instrumentKey, dates.length, timestamp.size(), historicalVerb.size(), historicalAlgorithmInfo.size(),
                             historicalFee.size(), historicalPrice.size(), historicalQuantity.size(), netPosition.size(),
                             avgOpenPrice.size(), netInvestment.size(), historicalRealizedPnl.size(),
                             historicalUnrealizedPnl.size(), historicalTotalPnl.size(), numberTrades.size(),
@@ -358,6 +362,11 @@ public class PortfolioManager {
                             .create("algorithmInfo", fromStrList(historicalAlgorithmInfo));
                     StringColumn clOrdIdColumn = StringColumn.create("clientOrderId", fromStrList(historicalClOrdId));
                     DoubleColumn priceColumn = DoubleColumn.create("price", fromList(historicalPrice));
+
+                    DoubleColumn bidPriceColumn = DoubleColumn.create("bidPrice", fromList(historicalBid));
+                    DoubleColumn askPriceColumn = DoubleColumn.create("askPrice", fromList(historicalAsk));
+                    DoubleColumn midPriceColumn = DoubleColumn.create("midPrice", fromList(historicalMid));
+
                     DoubleColumn feeColumn = DoubleColumn.create("fee", fromList(historicalFee));
                     DoubleColumn quantityColumn = DoubleColumn.create("quantity", fromList(historicalQuantity));
                     DoubleColumn netPositionColumn = DoubleColumn.create("netPosition", fromList(netPosition));
@@ -376,7 +385,7 @@ public class PortfolioManager {
 
                     Table output1 = Table.create(algorithm.algorithmInfo);
                     output1 = output1
-                            .addColumns(timestampColumn, dateTimeColumn, clOrdIdColumn, verbColumn, priceColumn,
+                            .addColumns(timestampColumn, dateTimeColumn, clOrdIdColumn, verbColumn, priceColumn, bidPriceColumn, askPriceColumn, midPriceColumn,
                                     quantityColumn, feeColumn, netPositionColumn, avgOpenPriceColumn,
                                     netInvestmentColumn, historicalRealizedPnlColumn, historicalUnrealizedPnltColumn,
                                     historicalTotalPnlColumn, numberTradesColumn, algoInfoColumn, instrumentColumn);
@@ -418,7 +427,7 @@ public class PortfolioManager {
                     // filtered! to reduce noise
 
                     output1 = output1.sortAscendingOn(dateTimeColumn.name());
-                    if (!TRADES_CSV_COMPLETE) {
+                    if (Configuration.PORTFOLIO_MANAGER_UPDATE_FREQUENCY_MS < 0) {
                         ///only returns rows on trades
                         IntColumn numberTradesSorted = output1.intColumn("numberTrades");
                         Table output2 = output1.where(numberTradesSorted.difference().isNotEqualTo(0.0));//
@@ -441,7 +450,7 @@ public class PortfolioManager {
                         try {
                             output1.write().csv(filename);
                         } catch (Exception e) {
-                            logger.error("can't save tradestable to {} ", filename, e);
+                            logger.error("can't save trades table to {} ", filename, e);
                         }
                     }
                     Instrument instrument = Instrument.getInstrument(getInstrumentPK(instrumentKey));

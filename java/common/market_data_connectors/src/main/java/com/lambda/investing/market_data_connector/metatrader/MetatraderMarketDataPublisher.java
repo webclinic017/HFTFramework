@@ -7,19 +7,16 @@ import com.lambda.investing.connector.ConnectorConfiguration;
 import com.lambda.investing.connector.ConnectorListener;
 import com.lambda.investing.connector.ConnectorPublisher;
 import com.lambda.investing.connector.zero_mq.ZeroMqConfiguration;
-import com.lambda.investing.connector.zero_mq.ZeroMqProvider;
 import com.lambda.investing.market_data_connector.AbstractMarketDataConnectorPublisher;
 import com.lambda.investing.market_data_connector.Statistics;
 import com.lambda.investing.metatrader.MetatraderZeroBrokerConnector;
 import com.lambda.investing.model.asset.Instrument;
 import com.lambda.investing.model.market_data.Depth;
-import com.lambda.investing.model.market_data.Trade;
 import com.lambda.investing.model.messaging.TypeMessage;
 import org.apache.commons.lang3.ArrayUtils;
 
 import java.lang.reflect.Modifier;
 import java.util.Date;
-import java.util.List;
 import java.util.Map;
 
 public class MetatraderMarketDataPublisher extends AbstractMarketDataConnectorPublisher implements ConnectorListener {
@@ -92,10 +89,10 @@ public class MetatraderMarketDataPublisher extends AbstractMarketDataConnectorPu
 		if (type.equalsIgnoreCase("DEPTH")) {
 			//{type:DEPTH,symbol:EURCAD, Time:1613420042,ASK_PRICE_0: 1.53317,ASK_QTY_0: 1000000.0,BID_PRICE_1: 1.53298,BID_QTY_1: 100000.0,}
 			depthReceived = true;
-			Double[] bidQty = new Double[maxLevelPermitted];
-			Double[] askQty = new Double[maxLevelPermitted];
-			Double[] bidPrice = new Double[maxLevelPermitted];
-			Double[] askPrice = new Double[maxLevelPermitted];
+            double[] bidQty = new double[maxLevelPermitted];
+            double[] askQty = new double[maxLevelPermitted];
+            double[] bidPrice = new double[maxLevelPermitted];
+            double[] askPrice = new double[maxLevelPermitted];
 			int maxLevel = 0;
 			for (String key : jsonReceived.keySet()) {
 				if (!key.contains("_")) {
@@ -112,7 +109,7 @@ public class MetatraderMarketDataPublisher extends AbstractMarketDataConnectorPu
 				if (level > maxLevelPermitted - 1) {
 					continue;
 				}
-				Double[] list = bidQty;
+                double[] list = bidQty;
 
 				if (side.equalsIgnoreCase("ask")) {
 					if (typeData.equalsIgnoreCase("price")) {
@@ -137,7 +134,7 @@ public class MetatraderMarketDataPublisher extends AbstractMarketDataConnectorPu
 			}
 
 			//setting object
-			Depth depth = new Depth();
+			Depth depth = Depth.getInstancePool();
 			depth.setBidsQuantities(ArrayUtils.subarray(bidQty, 0, maxLevel + 1));
 			depth.setAsksQuantities(ArrayUtils.subarray(askQty, 0, maxLevel + 1));
 			depth.setAsks(ArrayUtils.subarray(askPrice, 0, maxLevel + 1));
@@ -153,14 +150,14 @@ public class MetatraderMarketDataPublisher extends AbstractMarketDataConnectorPu
 		} else if (type.equalsIgnoreCase("TICK")) {
 			//create depth from tick data , best bid and best ask
 			depthReceived = true;
-			Depth depth = new Depth();
+			Depth depth = Depth.getInstancePool();
 			double bestBid = (double) jsonReceived.get("best_bid");
 			double bestAsk = (double) jsonReceived.get("best_ask");
 			if (bestAsk != 0 && bestBid != 0) {
 				double bestQty = DEFAULT_TICK_QTY;//not coming from darwinex
-				Double[] bids = new Double[]{bestBid};
-				Double[] asks = new Double[]{bestAsk};
-				Double[] quantities = new Double[]{bestQty};
+                double[] bids = new double[]{bestBid};
+                double[] asks = new double[]{bestAsk};
+                double[] quantities = new double[]{bestQty};
 				depth.setBids(bids);
 				depth.setAsks(asks);
 

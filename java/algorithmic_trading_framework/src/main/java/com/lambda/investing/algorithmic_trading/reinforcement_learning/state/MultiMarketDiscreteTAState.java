@@ -1,7 +1,7 @@
 package com.lambda.investing.algorithmic_trading.reinforcement_learning.state;
 
-import com.lambda.investing.Configuration;
 import com.lambda.investing.ArrayUtils;
+import com.lambda.investing.Configuration;
 import com.lambda.investing.algorithmic_trading.TimeseriesUtils;
 import com.lambda.investing.algorithmic_trading.reinforcement_learning.ScoreEnum;
 import com.lambda.investing.model.asset.Instrument;

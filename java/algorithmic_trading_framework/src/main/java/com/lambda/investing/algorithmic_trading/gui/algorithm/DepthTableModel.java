@@ -1,15 +1,11 @@
 package com.lambda.investing.algorithmic_trading.gui.algorithm;
 
-import com.lambda.investing.ArrayUtils;
 import com.lambda.investing.model.market_data.Depth;
 import com.lambda.investing.model.trading.ExecutionReport;
-import com.lambda.investing.model.trading.ExecutionReportStatus;
 import com.lambda.investing.model.trading.Verb;
 import lombok.Getter;
 
 import javax.swing.table.AbstractTableModel;
-
-import java.util.List;
 
 import static com.lambda.investing.ArrayUtils.ArrayReverse;
 import static com.lambda.investing.model.trading.ExecutionReport.liveStatus;
@@ -53,41 +49,39 @@ public class DepthTableModel extends AbstractTableModel {
     }
 
     private void extendBidSide(Depth depth) {
-        Double[] bids = depth.getBids();
-        Double[] newBids = new Double[bids.length + 1];
+        double[] bids = depth.getBids();
+        double[] newBids = new double[bids.length + 1];
         System.arraycopy(bids, 0, newBids, 0, bids.length);
-        newBids[bids.length] = null;
+        newBids[bids.length] = Depth.DEFAULT_VALUE;
         depth.setBids(newBids);
 
-        Double[] bidsVol = depth.getBidsQuantities();
-        Double[] newBidsVol = new Double[bidsVol.length + 1];
+        double[] bidsVol = depth.getBidsQuantities();
+        double[] newBidsVol = new double[bidsVol.length + 1];
         System.arraycopy(bidsVol, 0, newBidsVol, 0, bidsVol.length);
-        newBidsVol[bidsVol.length] = null;
+        newBidsVol[bidsVol.length] = Depth.DEFAULT_VALUE;
         depth.setBidsQuantities(newBidsVol);
     }
 
     private void extendAskSide(Depth depth) {
-        Double[] asks = depth.getAsks();
-        Double[] newasks = new Double[asks.length + 1];
+        double[] asks = depth.getAsks();
+        double[] newasks = new double[asks.length + 1];
         System.arraycopy(asks, 0, newasks, 0, asks.length);
-        newasks[asks.length] = null;
+        newasks[asks.length] = Depth.DEFAULT_VALUE;
         depth.setAsks(newasks);
 
-        Double[] asksVol = depth.getAsksQuantities();
-        Double[] newasksVol = new Double[asksVol.length + 1];
+        double[] asksVol = depth.getAsksQuantities();
+        double[] newasksVol = new double[asksVol.length + 1];
         System.arraycopy(asksVol, 0, newasksVol, 0, asksVol.length);
-        newasksVol[asksVol.length] = null;
+        newasksVol[asksVol.length] = Depth.DEFAULT_VALUE;
         depth.setAsksQuantities(newasksVol);
     }
 
 
     public void updateDepth(Depth depth) {
         synchronized (depthLock) {
-            Double[] asks = depth.getAsks();
-            Double[] bids = depth.getBids();
-            double[][] data = new double[asks.length > bids.length ? asks.length * 2 + 1 : bids.length * 2 + 1][TOTAL_COLUMNS];//last row if to mark quoted row
-            int bidsLength = bids.length;
-            int asksLength = asks.length;
+            double[][] data = new double[depth.getAskLevels() > depth.getBidLevels() ? depth.getAskLevels() * 2 + 1 : depth.getBidLevels() * 2 + 1][TOTAL_COLUMNS];//last row if to mark quoted row
+            int bidsLength = depth.getBidLevels();
+            int asksLength = depth.getAskLevels();
             if (lastQuoteBid != -1 && bidsLength == 1) {
                 //one row per side => extend it to have space for the algo quoting
                 bidsLength++;
@@ -111,17 +105,19 @@ public class DepthTableModel extends AbstractTableModel {
     }
 
     private void updateAsk(Depth depth, double[][] data, int askLength) {
-        Double[] asks = ArrayReverse(depth.getAsks());
-        Double[] askVols = ArrayReverse(depth.getAsksQuantities());
-        Double[] bids = depth.getBids();
+        double bestAsk = depth.getBestAsk();
+        double worstAsk = depth.getWorstAsk();
+        double[] asks = ArrayReverse(depth.getAsks().clone());
+        double[] askVols = ArrayReverse(depth.getAsksQuantities().clone());
+
 
         int levelToSetAskQuoting = -1;
         if (lastQuoteAsk != -1) {
-            if (lastQuoteAsk < depth.getBestAsk()) {
+            if (lastQuoteAsk < bestAsk) {
                 //we are the best!
                 levelToSetAskQuoting = asks.length - 1;
             }
-            if (lastQuoteAsk > depth.getWorstAsk()) {
+            if (lastQuoteAsk > worstAsk) {
                 //we are the worst
                 levelToSetAskQuoting = 0;
             }
@@ -134,13 +130,13 @@ public class DepthTableModel extends AbstractTableModel {
 //                    data[i][ASK_QUOTING] = 0;
 //                    continue;
 //                }
-            if (asks[i] != null) {
+            if (!Double.isNaN(asks[i]) && !Double.isNaN(askVols[i])) {
                 data[i][ASK_VOLUME_COLUMN] = askVols[i] / VOLUME_FACTOR;
                 data[i][ASK_COLUMN] = asks[i];
                 //compare with lastER
                 if (lastQuoteAsk != -1 && levelToSetAskQuoting == -1) {
                     boolean isSamePrice = Math.abs(lastQuoteAsk - asks[i]) < DELTA_PRICE_TO_MARK_QUOTING;
-                    boolean canCheckNextLevel = i + 1 < asks.length && asks[i + 1] != null;
+                    boolean canCheckNextLevel = i + 1 < asks.length && asks[i + 1] != Depth.DEFAULT_VALUE;
                     if (!isSamePrice && canCheckNextLevel) {
                         double nextPrice = asks[i + 1];
                         double currentPrice = asks[i];
@@ -170,18 +166,19 @@ public class DepthTableModel extends AbstractTableModel {
     }
 
     private void updateBid(Depth depth, double[][] data, int bidLength) {
-        Double[] asks = depth.getAsks();
-        Double[] bids = depth.getBids();
-        Double[] bidVols = depth.getBidsQuantities();
-        firstBidRow = asks.length;
+        double bestBid = depth.getBestBid();
+        double worstBid = depth.getWorstBid();
+        double[] bids = depth.getBids();
+        double[] bidVols = depth.getBidsQuantities();
+        firstBidRow = depth.getAsks().length;
 
         int levelToSetBidQuoting = -1;
         if (lastQuoteBid != -1) {
-            if (lastQuoteBid > depth.getBestBid()) {
+            if (lastQuoteBid > bestBid) {
                 //we are the best!
                 levelToSetBidQuoting = firstBidRow;
             }
-            if (lastQuoteBid < depth.getWorstBid()) {
+            if (lastQuoteBid < worstBid) {
                 //we are the worst
                 levelToSetBidQuoting = firstBidRow + bids.length - 1;
             }
@@ -189,14 +186,14 @@ public class DepthTableModel extends AbstractTableModel {
 
         for (int i = 0; i < bidLength; i++) {
             int indexWrite = firstBidRow + i;
-            if (bids[i] != null) {
+            if (!Double.isNaN(bids[i]) && !Double.isNaN(bidVols[i])) {
                 data[indexWrite][BID_VOL_COLUMN] = bidVols[i] / VOLUME_FACTOR;
                 data[indexWrite][BID_COLUMN] = bids[i];
 
                 //compare with lastER
                 if (lastQuoteBid != -1 && levelToSetBidQuoting == -1) {
                     boolean isSamePrice = Math.abs(lastQuoteBid - bids[i]) < DELTA_PRICE_TO_MARK_QUOTING;
-                    boolean canCheckNextLevel = i + 1 < bids.length && bids[i + 1] != null;
+                    boolean canCheckNextLevel = i + 1 < bids.length && bids[i + 1] != Depth.DEFAULT_VALUE;
                     if (!isSamePrice && canCheckNextLevel) {
                         double currentPrice = bids[i];
                         double nextPrice = bids[i + 1];

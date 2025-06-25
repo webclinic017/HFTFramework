@@ -1,21 +1,17 @@
 package com.lambda.investing.algorithmic_trading.reinforcement_learning.state;
 
 import com.lambda.investing.TimeSeriesQueue;
-import com.lambda.investing.algorithmic_trading.PnlSnapshot;
+import com.lambda.investing.algorithmic_trading.PortfolioSnapshot;
 import com.lambda.investing.algorithmic_trading.reinforcement_learning.ScoreEnum;
-import com.lambda.investing.algorithmic_trading.reinforcement_learning.ScoreUtils;
 import com.lambda.investing.model.asset.Instrument;
 import com.lambda.investing.model.candle.Candle;
 import com.lambda.investing.model.candle.CandleType;
 import com.lambda.investing.model.market_data.Depth;
 import com.lambda.investing.model.market_data.Trade;
 import org.apache.commons.lang3.ArrayUtils;
-import org.apache.curator.shaded.com.google.common.collect.EvictingQueue;
-import org.apache.curator.shaded.com.google.common.collect.Queues;
 
 import java.time.ZoneId;
 import java.util.*;
-
 
 import static com.lambda.investing.algorithmic_trading.reinforcement_learning.MatrixRoundUtils.*;
 
@@ -539,29 +535,31 @@ public class MarketState extends AbstractState {
     }
 
     @Override
-    public synchronized void updatePrivateState(PnlSnapshot pnlSnapshot) {
-        if ((pnlSnapshot.getLastTimestampUpdate() - lastPrivateTickSave) < privateTickMs) {
+    public synchronized void updatePrivateState(PortfolioSnapshot portfolioSnapshot) {
+
+        if ((portfolioSnapshot.getLastTimestampUpdate() - lastPrivateTickSave) < privateTickMs) {
             //not enough time to save it
             return;
         }
-
-        double score = ScoreUtils.getReward(this.scoreEnumColumn, pnlSnapshot);
+        double score = portfolioSnapshot.getReward(this.scoreEnumColumn);
         if (PRIVATE_QUANTITY_RELATIVE) {
             score = score / quantity;
         }
         scoreBuffer.offer(score);
 
-        unrealizedPnlBuffer.offer(pnlSnapshot.unrealizedPnl / quantity);
-        realizedPnlBuffer.offer(pnlSnapshot.realizedPnl / quantity);
+        unrealizedPnlBuffer.offer(portfolioSnapshot.unrealizedPnl / quantity);
+        realizedPnlBuffer.offer(portfolioSnapshot.realizedPnl / quantity);
 
-        double position = pnlSnapshot.netPosition;
+        double position = portfolioSnapshot.getPnlSnapshot(instrument.getPrimaryKey()).netPosition;
         if (PRIVATE_QUANTITY_RELATIVE) {
             position = position / quantity;
         }
         inventoryBuffer.offer(position);
 
-        lastPrivateTickSave = pnlSnapshot.getLastTimestampUpdate();
+        lastPrivateTickSave = portfolioSnapshot.getLastTimestampUpdate();
+
     }
+
 
     private int getTt(long timestamp) {
         Calendar calendar = Calendar.getInstance(TimeZone.getTimeZone(ZoneId.of("UTC")));

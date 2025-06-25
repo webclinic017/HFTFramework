@@ -5,6 +5,7 @@ import com.lambda.investing.Configuration;
 import com.lambda.investing.model.market_data.Depth;
 import com.lambda.investing.model.trading.*;
 import com.lambda.investing.trading_engine_connector.paper.PaperTradingEngine;
+import gnu.trove.list.TDoubleList;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -13,6 +14,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+import static com.lambda.investing.Configuration.BACKTEST_REFRESH_DEPTH_ORDER_REQUEST;
+import static com.lambda.investing.Configuration.BACKTEST_REFRESH_DEPTH_TRADES;
+
 /**
  * class that is implementing a complete orderbook  , just prices-qty references to backtest faster
  * change in PaperTradingEngine to use it
@@ -20,8 +24,6 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 public class OrderMatchEngine extends OrderbookManager {
 
     private static double ZERO_QTY_FILL = 1E-10;
-    public static boolean REFRESH_DEPTH_ORDER_REQUEST = true;//if true can be Stackoverflow on orderRequest!
-    public static boolean REFRESH_DEPTH_TRADES = true;//if true can be Stackoverflow on orderRequest!
 
     @Setter
     @Getter
@@ -45,7 +47,7 @@ public class OrderMatchEngine extends OrderbookManager {
     private NavigableMap<Double, List<FastOrder>> askSide = new ConcurrentSkipListMap<>();
     private Map<String, ExecutionReport> executionReportMap = new ConcurrentHashMap<>();
     private Map<String, FastOrder> fastOrderMap = new ConcurrentHashMap<>();
-    private volatile long currentTimestamp = 0L;
+
     private volatile long timeToNextUpdateMs = 0L;
 
     private enum FilledReactionNextDepthEnum {absolute, relative}
@@ -64,7 +66,7 @@ public class OrderMatchEngine extends OrderbookManager {
     public void reset() {
         writeLock.lock();
         try {
-            currentTimestamp = 0L;
+            lastTimestamp = 0L;
             timeToNextUpdateMs = 0L;
             bidSide.clear();
             askSide.clear();
@@ -76,8 +78,7 @@ public class OrderMatchEngine extends OrderbookManager {
     }
 
     private void removeMMOrdersDepth(Verb verb, Depth newDepth) {
-
-        List<Double> pricesInDepth = null;
+        TDoubleList pricesInDepth = null;
 //        List<Double> qtyInDepth = null;
         NavigableMap<Double, List<FastOrder>> navigableMapTo = null;
         boolean isRelative = TRADE_REACTIVE_NEXT_DEPTH.equals(FilledReactionNextDepthEnum.relative);
@@ -124,40 +125,33 @@ public class OrderMatchEngine extends OrderbookManager {
     }
 
     private void cleanEmptyPriceLevels(Verb verb) {
-
         NavigableMap<Double, List<FastOrder>> side = getSide(verb);
         List<Double> pricesToRemove = new ArrayList<>();
 
         for (Map.Entry<Double, List<FastOrder>> entry : side.entrySet()) {
             double totLevelQty = 0.0;
-            List<FastOrder> ordersInLevel = new ArrayList<>(entry.getValue());
-            List<FastOrder> ordersToRemove = new ArrayList<>();
-            for (FastOrder fastOrder : ordersInLevel) {
+            List<FastOrder> ordersInLevel = entry.getValue();
+            Iterator<FastOrder> iterator = ordersInLevel.iterator();
+
+            while (iterator.hasNext()) {
+                FastOrder fastOrder = iterator.next();
                 totLevelQty += fastOrder.qty;
                 if (fastOrder.qty <= 0) {
-                    ordersToRemove.add(fastOrder);
-
+                    iterator.remove(); // Safely remove the element
                     if (fastOrder.orderRequest != null) {
                         fastOrderMap.remove(fastOrder.orderRequest.getClientOrderId());
                     }
-
                 }
             }
-            if (totLevelQty > 0) {
 
-                ordersInLevel.removeAll(ordersToRemove);
-                side.put(entry.getKey(), ordersInLevel);
-
-            } else {
+            if (totLevelQty <= 0) {
                 pricesToRemove.add(entry.getKey());
             }
         }
 
         for (double price : pricesToRemove) {
             side.remove(price);
-
         }
-
     }
 
     private void addFastOrder(FastOrder order, Verb verb) {
@@ -189,7 +183,7 @@ public class OrderMatchEngine extends OrderbookManager {
         readLock.lock();
         try {
             // Check again in case the currentTimestamp was updated while waiting for the lock
-            if (!depth.isDepthValid() || depth.getTimestamp() < currentTimestamp) {
+            if (!depth.isDepthValid() || depth.getTimestamp() < lastTimestamp) {
                 return;
             }
         } finally {
@@ -198,7 +192,7 @@ public class OrderMatchEngine extends OrderbookManager {
 
         writeLock.lock();
         try {
-            currentTimestamp = depth.getTimestamp();
+            lastTimestamp = depth.getTimestamp();
             if (depth.getTimeToNextUpdateMs() != Long.MIN_VALUE) {
                 timeToNextUpdateMs = depth.getTimeToNextUpdateMs();
             }
@@ -206,8 +200,8 @@ public class OrderMatchEngine extends OrderbookManager {
             // Process market maker orders for both sides
             removeMMOrdersDepth(Verb.Buy, depth);//remove first
             //add the bid side
-            Double[] bids = depth.getBids();
-            Double[] bidsQty = depth.getBidsQuantities();
+            double[] bids = depth.getBids();
+            double[] bidsQty = depth.getBidsQuantities();
             boolean thereAreChanges = false;
             for (int level = 0; level < bids.length; level++) {
                 FastOrder order = new FastOrder();
@@ -233,8 +227,8 @@ public class OrderMatchEngine extends OrderbookManager {
 
             removeMMOrdersDepth(Verb.Sell, depth);//remove first
             //add the ask side
-            Double[] asks = depth.getAsks();
-            Double[] asksQty = depth.getAsksQuantities();
+            double[] asks = depth.getAsks();
+            double[] asksQty = depth.getAsksQuantities();
             for (int level = 0; level < asks.length; level++) {
                 FastOrder order = new FastOrder();
                 order.algorithm = MARKET_MAKER_ALGORITHM_INFO;
@@ -268,7 +262,7 @@ public class OrderMatchEngine extends OrderbookManager {
             cleanEmptyLevels();
 
             // Notify the new depth if there are changes
-            Depth finalDepth = getDepth();
+            Depth finalDepth = getDepth();//from pool notifyDepth is going to delete it
             this.paperTradingEngineConnector.notifyDepth(finalDepth);
             lastDepthRefreshed = depth;
         } finally {
@@ -281,7 +275,7 @@ public class OrderMatchEngine extends OrderbookManager {
         try {
             ExecutionReport executionReportOut = executionReportMap
                     .getOrDefault(orderSent.getClientOrderId(), new ExecutionReport(orderSent));
-            long timestamp = Math.max(currentTimestamp, orderSent.getTimestampCreation());
+            long timestamp = Math.max(lastTimestamp, orderSent.getTimestampCreation());
             executionReportOut.setTimestampCreation(timestamp);//add more time
             return executionReportOut;
         } finally {
@@ -313,6 +307,14 @@ public class OrderMatchEngine extends OrderbookManager {
 
     }
 
+    private void notifyRefreshedDepth() {
+        Depth lastDepth = getDepth();
+        if (lastDepth.getTimeToNextUpdateMs() >= Configuration.REFRESH_DEPTH_ORDER_REQUEST_MS) {
+            //if there's no time , we are not notifying it
+            lastDepth.delayTimestamp(Configuration.REFRESH_DEPTH_ORDER_REQUEST_MS);
+            paperTradingEngineConnector.notifyDepth(lastDepth);
+        }
+    }
 
     /**
      * When a trade is read check if match any limit order
@@ -324,12 +326,12 @@ public class OrderMatchEngine extends OrderbookManager {
 
         writeLock.lock();
         try {
-            if (trade.getTimestamp() >= currentTimestamp) {
-                currentTimestamp = trade.getTimestamp();
+            if (trade.getTimestamp() >= lastTimestamp) {
+                lastTimestamp = trade.getTimestamp();
             } else {
                 //warning?!
-                logger.warn("refreshFillMarketTrade. Trade timestamp is lower than currentTimestamp {} < {}", trade.getTimestamp(), currentTimestamp);
-                trade.setTimestamp(currentTimestamp);
+                logger.warn("refreshFillMarketTrade. Trade timestamp is lower than currentTimestamp {} < {}", trade.getTimestamp(), lastTimestamp);
+                trade.setTimestamp(lastTimestamp);
             }
 
             if (trade.getTimeToNextUpdateMs() != Long.MIN_VALUE) {
@@ -345,130 +347,81 @@ public class OrderMatchEngine extends OrderbookManager {
                 trade.setVerb(verb);//inferring verb side from trade
             }
 
-            if (verb != null && verb.equals(Verb.Buy) && askSide.size() > 0) {
-//                NavigableMap<Double, List<FastOrder>> mapToCheck = askSide;//new TreeMap<>(askSide);
-                for (Map.Entry<Double, List<FastOrder>> entry : askSide.entrySet()) {
+            NavigableMap<Double, List<FastOrder>> sideToCheck = verb == Verb.Buy ? askSide : bidSide;
+
+            if (verb != null && !sideToCheck.isEmpty()) {
+                Iterator<Map.Entry<Double, List<FastOrder>>> sideIterator = sideToCheck.entrySet().iterator();
+
+                while (sideIterator.hasNext() && qtyTrade > 0) {
+                    Map.Entry<Double, List<FastOrder>> entry = sideIterator.next();
                     Double orderPrice = entry.getKey();
-                    if (trade.getPrice() >= orderPrice) {
-                        List<FastOrder> orderList = askSide.get(orderPrice);
-                        for (FastOrder orderInLevel : orderList) {
+
+                    if ((verb == Verb.Buy && trade.getPrice() >= orderPrice) || (verb == Verb.Sell && trade.getPrice() <= orderPrice)) {
+                        List<FastOrder> orderList = entry.getValue();
+                        Iterator<FastOrder> orderIterator = orderList.iterator();
+
+                        while (orderIterator.hasNext() && qtyTrade > 0) {
+                            FastOrder orderInLevel = orderIterator.next();
+
                             if (orderInLevel.algorithm.equalsIgnoreCase(MARKET_MAKER_ALGORITHM_INFO)) {
                                 qtyTrade -= orderInLevel.qty;
                                 continue;
                             }
+
                             if (qtyTrade <= 0) {
                                 continue;
                             }
+
                             OrderRequest orderSent = orderInLevel.getOrderRequest();
                             if (orderSent == null) {
-                                logger.error("error on order without OrderRequest saved!! ASK {} ", orderInLevel.algorithm);
+                                logger.error("error on order without OrderRequest saved!! {} {}", verb, orderInLevel.algorithm);
                                 continue;
                             }
-                            //trade happened in the ask side
+
                             ExecutionReport executionReport = getExecutionReport(orderSent);
-                            double qtyFill = Math.min(executionReport.getQuantity() - executionReport.getQuantityFill(),
-                                    trade.getQuantity());
+                            double qtyFill = Math.min(executionReport.getQuantity() - executionReport.getQuantityFill(), qtyTrade);
 
                             qtyTrade -= qtyFill;
                             orderInLevel.qty -= qtyFill;
 
+                            if (orderInLevel.qty <= 0) {
+                                orderIterator.remove(); // Safely remove the order
+                            }
+
                             executionReport.setQuantityFill(executionReport.getQuantityFill() + qtyFill);
                             if (executionReport.getQuantityFill() < ZERO_QTY_FILL) {
-                                //ignore partial filled! probably already CF
                                 continue;
                             }
+
                             executionReport.setLastQuantity(qtyFill);
                             executionReport.setExecutionReportStatus(ExecutionReportStatus.PartialFilled);
                             if (executionReport.getQuantityFill() >= orderSent.getQuantity()) {
                                 executionReport.setExecutionReportStatus(ExecutionReportStatus.CompletellyFilled);
                             }
-                            executionReport.setTimestampCreation(currentTimestamp);
+                            executionReport.setTimestampCreation(lastTimestamp);
 
                             executionReportMap.put(executionReport.getClientOrderId(), executionReport);
                             tradeNotified = true;
                             notifyExecutionReport(executionReport);
                         }
-                        if (tradeNotified) {
-                            //depth has changed!
-                            cleanEmptyLevels();
-                            if (REFRESH_DEPTH_TRADES) {
-                                Depth lastDepth = getDepth();
-                                paperTradingEngineConnector.notifyDepth(lastDepth);
-                            }
-                        } else {
-                            paperTradingEngineConnector.notifyTrade(trade);
-                        }
 
-                    }
-                    if (qtyTrade <= 0) {
-                        //will be notified from ER
-                        return true;
+                        if (orderList.isEmpty()) {
+                            sideIterator.remove(); // Safely remove the price level if empty
+                        }
                     }
                 }
-            } else if (verb != null && verb.equals(Verb.Sell) && bidSide.size() > 0) {
-//                NavigableMap<Double, List<FastOrder>> mapToCheck = bidSide;//new TreeMap<>(bidSide);
-                for (Map.Entry<Double, List<FastOrder>> entry : bidSide.entrySet()) {
-                    Double orderPrice = entry.getKey();
-                    if (trade.getPrice() <= orderPrice) {
-                        List<FastOrder> orderList = bidSide.get(orderPrice);
-                        for (FastOrder orderInLevel : orderList) {
-                            if (orderInLevel.algorithm.equalsIgnoreCase(MARKET_MAKER_ALGORITHM_INFO)) {
-                                qtyTrade -= orderInLevel.qty;
-                                continue;
-                            }
-                            if (qtyTrade <= 0) {
-                                continue;
-                            }
-                            OrderRequest orderSent = orderInLevel.getOrderRequest();
-                            if (orderSent == null) {
-                                logger.error("error on order without OrderRequest saved!! BID {} ", orderInLevel.algorithm);
-                                continue;
-                            }
-                            ExecutionReport executionReport = getExecutionReport(orderSent);
-                            double qtyFill = Math.min(executionReport.getQuantity() - executionReport.getQuantityFill(),
-                                    trade.getQuantity());
 
-                            qtyTrade -= qtyFill;
-                            orderInLevel.qty -= qtyFill;
-
-                            executionReport.setQuantityFill(executionReport.getQuantityFill() + qtyFill);
-                            if (executionReport.getQuantityFill() < ZERO_QTY_FILL) {
-                                //ignore partial filled! probably already CF
-                                continue;
-                            }
-
-                            executionReport.setLastQuantity(qtyFill);
-                            executionReport.setExecutionReportStatus(ExecutionReportStatus.PartialFilled);
-                            if (executionReport.getQuantityFill() >= orderSent.getQuantity()) {
-                                executionReport.setExecutionReportStatus(ExecutionReportStatus.CompletellyFilled);
-                            }
-                            executionReport.setTimestampCreation(currentTimestamp);
-                            executionReportMap.put(orderSent.getClientOrderId(), executionReport);
-                            tradeNotified = true;
-                            notifyExecutionReport(executionReport);
-                        }
-                        if (tradeNotified) {
-                            //depth has changed!
-                            cleanEmptyLevels();
-                            if (REFRESH_DEPTH_TRADES) {
-                                Depth lastDepth = getDepth();
-                                paperTradingEngineConnector.notifyDepth(lastDepth);
-                            }
-                        } else {
-                            paperTradingEngineConnector.notifyTrade(trade);
-                        }
+                if (tradeNotified) {
+                    cleanEmptyLevels();
+                    if (BACKTEST_REFRESH_DEPTH_TRADES) {
+                        notifyRefreshedDepth();
                     }
-                    if (qtyTrade <= 0) {
-                        //will be notified from ER
-                        return true;
-                    }
-
+                } else {
+                    paperTradingEngineConnector.notifyTrade(trade);
                 }
-
             }
 
             if (!tradeNotified && qtyTrade > 0) {
-                //something not in algos
                 trade.setQuantity(qtyTrade);
                 paperTradingEngineConnector.notifyTrade(trade);
             }
@@ -566,9 +519,8 @@ public class OrderMatchEngine extends OrderbookManager {
                     cleanEmptyLevels();
                     if (!fromModify) {
                         //from modify not update Depth yet
-                        if (REFRESH_DEPTH_ORDER_REQUEST) {
-                            Depth depth = getDepth();
-                            paperTradingEngineConnector.notifyDepth(depth);
+                        if (BACKTEST_REFRESH_DEPTH_ORDER_REQUEST) {
+                            notifyRefreshedDepth();
                         }
                     }
 
@@ -615,7 +567,7 @@ public class OrderMatchEngine extends OrderbookManager {
         readLock.lock();
         try {
             ExecutionReport executionReport = new ExecutionReport(orderRequest);
-            long time = Math.max(orderRequest.getTimestampCreation(), currentTimestamp);
+            long time = Math.max(orderRequest.getTimestampCreation(), lastTimestamp);
             executionReport.setTimestampCreation(time);
             executionReport.setExecutionReportStatus(ExecutionReportStatus.Rejected);
             executionReport.setRejectReason(reason);
@@ -669,7 +621,10 @@ public class OrderMatchEngine extends OrderbookManager {
                 boolean changeOrderbook = false;
                 boolean activeHasBeenSent = false;
 
-                for (Map.Entry<Double, List<FastOrder>> entry : side.entrySet()) {
+                // Create a copy of the entries to avoid concurrent modification
+                List<Map.Entry<Double, List<FastOrder>>> sideEntries = new ArrayList<>(side.entrySet());
+
+                for (Map.Entry<Double, List<FastOrder>> entry : sideEntries) {
                     if (qtyOfOrder <= 0) {
                         break;
                     }
@@ -677,7 +632,10 @@ public class OrderMatchEngine extends OrderbookManager {
                     boolean orderPriceCrossed = isSelling ? price <= priceLevel : price >= priceLevel;
                     if (orderPriceCrossed) {
                         //match
-                        for (FastOrder fastOrder : side.get(priceLevel)) {
+                        // Create a copy of the orders at this level to avoid concurrent modification
+                        List<FastOrder> ordersInLevel = new ArrayList<>(side.get(priceLevel));
+
+                        for (FastOrder fastOrder : ordersInLevel) {
                             //orders in the level
                             if (qtyOfOrder <= 0) {
                                 break;
@@ -700,7 +658,7 @@ public class OrderMatchEngine extends OrderbookManager {
                                 executionReport.setExecutionReportStatus(ExecutionReportStatus.Active);
                                 //check price active if directly filled!
                                 executionReportMap.put(executionReport.getClientOrderId(), executionReport);
-                                if(!activeHasBeenSent) {
+                                if (!activeHasBeenSent) {
                                     activeHasBeenSent = true;
                                     notifyExecutionReport(executionReport);
                                 }
@@ -783,13 +741,9 @@ public class OrderMatchEngine extends OrderbookManager {
                                 changeOrderbook = true;
                                 executionReportMap.put(orderER.getClientOrderId(), orderER);
                                 notifyExecutionReport(orderER);
-
                             }
-
                         }
-
                     }
-
                 }
 
                 if (qtyOfOrder > 0) {
@@ -814,18 +768,15 @@ public class OrderMatchEngine extends OrderbookManager {
                         notifyExecutionReport(executionReport);
                     }
                     changeOrderbook = true;
-
                 }
 
                 if (changeOrderbook) {
                     //notify last status depth Depth!!
                     cleanEmptyLevels();
-                    if (REFRESH_DEPTH_ORDER_REQUEST) {
-                        Depth newDepth = getDepth();
-                        paperTradingEngineConnector.notifyDepth(newDepth);
+                    if (BACKTEST_REFRESH_DEPTH_ORDER_REQUEST) {
+                        notifyRefreshedDepth();
                     }
                 }
-
             }
             return true;
         } finally {
@@ -858,13 +809,13 @@ public class OrderMatchEngine extends OrderbookManager {
     protected Depth getDepth() {
         readLock.lock();
         try {
-            Depth depth = new Depth();
-            depth.setTimestamp(currentTimestamp);
+            Depth depth = Depth.getInstancePool();//this is going to the algo directly
+            depth.setTimestamp(lastTimestamp);
             depth.setTimeToNextUpdateMs(timeToNextUpdateMs);
             depth.setInstrument(instrumentPk);
             //bid side
-            Double[] bidsQuantities = new Double[bidSide.size()];
-            Double[] bids = new Double[bidSide.size()];
+            double[] bidsQuantities = new double[bidSide.size()];
+            double[] bids = new double[bidSide.size()];
             List<String>[] bidsAlgorithmInfo = new List[bidSide.size()];
 
             int bidIndex = 0;
@@ -888,8 +839,8 @@ public class OrderMatchEngine extends OrderbookManager {
             depth.setBidLevels(bidSide.size());
 
             //ASK side
-            Double[] asksQuantities = new Double[askSide.size()];
-            Double[] asks = new Double[askSide.size()];
+            double[] asksQuantities = new double[askSide.size()];
+            double[] asks = new double[askSide.size()];
             List<String>[] asksAlgorithmInfo = new List[askSide.size()];
 
             int askIndex = 0;
@@ -967,36 +918,46 @@ public class OrderMatchEngine extends OrderbookManager {
     }
 
     private void crossOrders(List<FastOrder> bidLevelOrders, List<FastOrder> askLevelOrders) {
-        readLock.lock();
+        writeLock.lock();
         try {
-            //match in orders!! remove of one side!
-            for (FastOrder bidOrder : bidLevelOrders) {
-                for (FastOrder askOrder : askLevelOrders) {
-                    //check volume of the order sometimes is zero
-                    double bidQty = bidOrder.qty;
-                    double askQty = askOrder.qty;
-                    boolean invalidQty = bidQty <= 0 || askQty <= 0;
-                    if (invalidQty) {
-//                        logger.error("previous filled? with qty<=0  bidQty:{}  askQty:{}", bidQty, askQty);
-                        continue;
-                    }
-                    boolean isSameAlgo = bidOrder.algorithm.equalsIgnoreCase(askOrder.algorithm);
-                    if (isSameAlgo) {
-                        //rejection! of same algo trade!
-                        logger.error("something must be wrong with trade bid algo {}@{} with ask algo {}@{}",
+            // Create defensive copies of the collections to avoid concurrent modification
+            List<FastOrder> bidOrdersCopy = new ArrayList<>(bidLevelOrders);
+            List<FastOrder> askOrdersCopy = new ArrayList<>(askLevelOrders);
+
+            // Track orders to remove after processing to avoid ConcurrentModificationException
+            List<FastOrder> bidsToRemove = new ArrayList<>();
+            List<FastOrder> asksToRemove = new ArrayList<>();
+
+            for (FastOrder bidOrder : bidOrdersCopy) {
+                if (bidOrder.qty <= 0) continue;
+
+                for (FastOrder askOrder : askOrdersCopy) {
+                    if (askOrder.qty <= 0) continue;
+
+                    // Skip self-trades
+                    if (bidOrder.algorithm.equalsIgnoreCase(askOrder.algorithm)) {
+                        logger.error("Trade between same algorithm: bid {}@{} and ask {}@{}",
                                 bidOrder.algorithm, bidOrder.price, askOrder.algorithm, askOrder.price);
                         continue;
                     }
 
-                    //match non mm bid with ask
                     double qtyFill = Math.min(bidOrder.qty, askOrder.qty);
-                    if (Math.abs(qtyFill) < 1E-10) {
-                        //ignore partial filled! probably already CF
-                        continue;
+                    if (qtyFill <= 1E-10) {
+                        continue; // Ignore tiny fills
                     }
+
                     bidOrder.qty -= qtyFill;
                     askOrder.qty -= qtyFill;
 
+                    // Mark orders for removal if qty is depleted
+                    if (bidOrder.qty <= 1E-10 && !bidsToRemove.contains(bidOrder)) {
+                        bidsToRemove.add(bidOrder);
+                    }
+                    if (askOrder.qty <= 1E-10 && !asksToRemove.contains(askOrder)) {
+                        asksToRemove.add(askOrder);
+                    }
+
+                    // Create execution report
                     ExecutionReport executionReport = null;
                     if (!bidOrder.algorithm.equalsIgnoreCase(MARKET_MAKER_ALGORITHM_INFO)) {
                         executionReport = createExecutionReport(bidOrder, askOrder, qtyFill);
@@ -1004,34 +965,41 @@ public class OrderMatchEngine extends OrderbookManager {
                         executionReport = createExecutionReport(askOrder, bidOrder, qtyFill);
                     }
 
-                    if (executionReport == null) {
-                        continue;
+                    if (executionReport != null) {
+                        executionReportMap.put(executionReport.getClientOrderId(), executionReport);
+
+                        // Release lock before making external calls to avoid deadlocks
+                        writeLock.unlock();
+                        try {
+                            notifyExecutionReport(executionReport);
+                        } finally {
+                            writeLock.lock();
+                        }
                     }
 
-
-                    executionReportMap.put(executionReport.getClientOrderId(), executionReport);
-
-                    notifyExecutionReport(executionReport);//trades will be notified here
-
+                    // Stop processing this bid if its quantity is depleted
+                    if (bidOrder.qty <= 1E-10) {
+                        break;
+                    }
                 }
-
             }
 
+            // Now safely remove orders after all processing is complete
+            bidLevelOrders.removeAll(bidsToRemove);
+            askLevelOrders.removeAll(asksToRemove);
         } finally {
-            readLock.unlock();
+            writeLock.unlock();
         }
     }
 
-    //cross orders
-    //match in orders!! remove of one side!
     protected void checkExecutions() {
-        readLock.lock();
+        writeLock.lock();
         try {
             NavigableMap<Double, List<FastOrder>> bidSide = getSide(Verb.Buy);
             NavigableMap<Double, List<FastOrder>> askSide = getSide(Verb.Sell);
             if (bidSide == null || askSide == null || bidSide.isEmpty() || askSide.isEmpty()) {
                 //avoid errors
-                logger.warn("{} no orders to check match", new Date(currentTimestamp));
+                logger.warn("{} no orders to check match", new Date(lastTimestamp));
                 return;
             }
 
@@ -1039,14 +1007,13 @@ public class OrderMatchEngine extends OrderbookManager {
             double bestAsk = askSide.firstKey();
 
             if (bestBid >= bestAsk) {
-
                 //start matching trades!
                 //check BID and ASK not crossed after depth update!
-                for (Map.Entry<Double, List<FastOrder>> bidLevelEntry : bidSide.entrySet()) {
+                for (Map.Entry<Double, List<FastOrder>> bidLevelEntry : new HashMap<>(bidSide).entrySet()) {
                     double bidPrice = bidLevelEntry.getKey();
                     List<FastOrder> bidOrdersLevel = bidLevelEntry.getValue();
 
-                    for (Map.Entry<Double, List<FastOrder>> askLevelEntry : askSide.entrySet()) {
+                    for (Map.Entry<Double, List<FastOrder>> askLevelEntry : new HashMap<>(askSide).entrySet()) {
                         double askPrice = askLevelEntry.getKey();
                         List<FastOrder> askOrdersLevel = askLevelEntry.getValue();
                         boolean crossed = bidPrice >= askPrice;
@@ -1054,13 +1021,11 @@ public class OrderMatchEngine extends OrderbookManager {
                         if (crossed) {
                             crossOrders(bidOrdersLevel, askOrdersLevel);
                         }
-
                     }
                 }
             }
-
         } finally {
-            readLock.unlock();
+            writeLock.unlock();
         }
     }
 

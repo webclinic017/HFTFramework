@@ -1,11 +1,8 @@
 package com.lambda.investing.algorithmic_trading.reinforcement_learning.state;
 
-import com.google.common.collect.BiMap;
-import com.google.common.collect.HashBiMap;
-import com.lambda.investing.algorithmic_trading.PnlSnapshot;
+import com.lambda.investing.algorithmic_trading.PortfolioSnapshot;
 import com.lambda.investing.algorithmic_trading.reinforcement_learning.MatrixRoundUtils;
 import com.lambda.investing.algorithmic_trading.reinforcement_learning.ScoreEnum;
-import com.lambda.investing.algorithmic_trading.reinforcement_learning.ScoreUtils;
 import com.lambda.investing.model.candle.Candle;
 import com.lambda.investing.model.market_data.Depth;
 import com.lambda.investing.model.market_data.Trade;
@@ -133,26 +130,27 @@ import static com.lambda.investing.algorithmic_trading.reinforcement_learning.Ma
 
 	}
 
-	public void updatePrivateState(PnlSnapshot pnlSnapshot) {
-		if ((pnlSnapshot.getLastTimestampUpdate() - lastTickSave) < tickMs) {
+	public void updatePrivateState(PortfolioSnapshot portfolioSnapshot) {
+		if ((portfolioSnapshot.getLastTimestampUpdate() - lastTickSave) < tickMs) {
 			//not enough time to save it
 			return;
 		}
 
-		double score = ScoreUtils.getReward(this.scoreEnumColumn, pnlSnapshot);
+		double score = portfolioSnapshot.getReward(this.scoreEnumColumn);
 		if (QUANTITY_RELATIVE) {
 			score = score / quantity;
 		}
 		scoreBuffer.offer(score);
 
-		double position = pnlSnapshot.netPosition;
+		double position = portfolioSnapshot.getNetPosition();
 		if (QUANTITY_RELATIVE) {
 			position = position / quantity;
 		}
 		inventoryBuffer.offer(position);
 
-		lastTickSave = pnlSnapshot.getLastTimestampUpdate();
+		lastTickSave = portfolioSnapshot.getLastTimestampUpdate();
 	}
+
 
 	@Override public void updateDepthState(Depth depth) {
 

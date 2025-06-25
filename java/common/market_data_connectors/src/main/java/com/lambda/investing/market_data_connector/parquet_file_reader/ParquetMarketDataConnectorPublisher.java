@@ -17,6 +17,7 @@ import com.lambda.investing.model.market_data.TradeParquet;
 import com.lambda.investing.model.messaging.Command;
 import me.tongfei.progressbar.ProgressBar;
 import me.tongfei.progressbar.ProgressBarStyle;
+import net.openhft.affinity.AffinityLock;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import tech.tablesaw.api.*;
@@ -67,7 +68,10 @@ public class ParquetMarketDataConnectorPublisher extends AbstractMarketDataConne
 
         this.parquetFileConfiguration = parquetFileConfiguration;
         dates = this.parquetFileConfiguration.getDatesToLoad();
-        readingThread = new Thread(this, "backtestReader");
+
+//        readingThread = new Thread(this, "backtestReader");
+        readingThread = new Thread(this::runAffinity, "backtestReader");
+
         this.setStatistics(null);//disable statistics
     }
 
@@ -249,22 +253,35 @@ public class ParquetMarketDataConnectorPublisher extends AbstractMarketDataConne
         }
 
         List<Table> tablesList = new ArrayList<>();
+        Table depth = null;
         for (String depthFile : depthFiles) {
-            Table depth = readDepth(depthFile, date, logger, dataManager);
+            depth = readDepth(depthFile, date, logger, dataManager);
             if (depth != null)
                 tablesList.add(depth);
         }
-
+        Table trade = null;
         if (tradesFile != null) {
             //not needed -> darwinex
             for (String tradeFile : tradesFile) {
-                Table trade = readTrade(tradeFile, date, logger, dataManager);
+                trade = readTrade(tradeFile, date, logger, dataManager);
                 if (trade != null)
                     tablesList.add(trade);
             }
         }
         System.out.println(Configuration.formatLog("Loading data(merging/sorting {} files of {} )... ", tablesList.size(), startDateTotal, endDateTotal));
         Table output = FileDataUtils.createTableMerged(startDateTotal, endDateTotal, tablesList);
+
+        //clean memory
+        tablesList.clear();//clear memory
+        if (depth != null) {
+            depth.clear();
+            depth = null;//delete depth from pool
+        }
+
+        if (trade != null) {
+            trade.clear();
+            trade = null;//delete depth from pool
+        }
 
         if (BACKTEST_SYNCHRONIZED_TRADES_DEPTH_MAX_MS > 0 && tradesFile != null) {
             System.out.println(Configuration.formatLog("Synchronizing trades with depth until {} ms... ", BACKTEST_SYNCHRONIZED_TRADES_DEPTH_MAX_MS));
@@ -305,6 +322,20 @@ public class ParquetMarketDataConnectorPublisher extends AbstractMarketDataConne
 
     public static void setSpeed(int speed) {
         SPEED = speed;
+    }
+
+    public void runAffinity() {
+        try (AffinityLock al = AffinityLock.acquireLock(Configuration.GET_AFFINITY_CPUS())) {
+            run();
+        } catch (Configuration.LambdaConfigurationException e) {
+            run();
+        } catch (Exception e) {
+            logger.warn("error AffinityLock ", e);
+            if (Configuration.IS_LINUX) {
+                System.err.println("error AffinityLock  -> " + e.toString());
+            }
+            run();
+        }
     }
 
     @Override
@@ -432,7 +463,7 @@ public class ParquetMarketDataConnectorPublisher extends AbstractMarketDataConne
                         try {
                             if (type.equalsIgnoreCase("depth")) {
                                 long timeToNextUpdateMs = (long) readingTableDate.row(rowNumber).getDouble(MS_TO_NEXT_UPDATE_COL);
-                                Depth depth = createDepth(row, instrument);
+                                Depth depth = createDepth(row, instrument);//create depth from pool
                                 if (timeToNextUpdateMs != Long.MIN_VALUE) {
                                     depth.setTimeToNextUpdateMs(timeToNextUpdateMs);
                                 }
@@ -441,20 +472,24 @@ public class ParquetMarketDataConnectorPublisher extends AbstractMarketDataConne
 
                                 if (depth.isDepthValid()) {
                                     lastDepth.put(instrument, depth);
-                                    notifyDepth(topic, depth);
+                                    notifyDepth(topic, depth);//delete from pool
+                                } else {
+                                    depth.delete();//delete from pool
                                 }
                             }
 
                             if (type.equalsIgnoreCase("trade")) {
                                 long timeToNextUpdateMs = 1L;
-                                Trade trade = createTrade(row, instrument);
+                                Trade trade = createTrade(row, instrument);//create trade from pool
                                 if (timeToNextUpdateMs != Long.MIN_VALUE) {
                                     trade.setTimeToNextUpdateMs(timeToNextUpdateMs);
                                 }
                                 String topic = getTopic(instrument);
                                 ;
                                 if (trade.isTradeValid(lastDepth.get(instrument))) {
-                                    notifyTrade(topic, trade);
+                                    notifyTrade(topic, trade);//delete from pool
+                                } else {
+                                    trade.delete();//delete from pool
                                 }
                             }
 
@@ -495,7 +530,8 @@ public class ParquetMarketDataConnectorPublisher extends AbstractMarketDataConne
         System.out.println("Finished reading backtest Parquet: " + stopwatch.stop());
         logger.info("************************* END OF Parquets ***************");
         logger.info("End of {} reading table", this.getClass().getSimpleName());
-
+        logger.info("Depth.pool: {} ", Depth.logPool());
+        logger.info("Trade.pool: {} ", Trade.logPool());
         //stop the algorithm
         STOP_COMMAND.setTimestamp(timeStamp);
         notifyCommand(TOPIC_COMMAND, STOP_COMMAND);

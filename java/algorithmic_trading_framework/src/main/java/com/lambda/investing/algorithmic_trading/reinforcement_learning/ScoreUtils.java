@@ -2,7 +2,7 @@ package com.lambda.investing.algorithmic_trading.reinforcement_learning;
 
 import com.lambda.investing.algorithmic_trading.Algorithm;
 import com.lambda.investing.algorithmic_trading.PnlSnapshot;
-import com.lambda.investing.algorithmic_trading.SingleInstrumentAlgorithm;
+import com.lambda.investing.algorithmic_trading.PortfolioManager;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -38,5 +38,10 @@ public class ScoreUtils {
 
 		return output;
 	}
+
+	public static double getReward(ScoreEnum scoreEnum, PortfolioManager portfolioManager) {
+		return portfolioManager.getPortfolioSnapshot().getReward(scoreEnum);
+	}
+
 
 }

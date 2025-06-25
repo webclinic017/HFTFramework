@@ -1,8 +1,8 @@
 {
   "backtest": {
-    "startDate": "20231113 06:00:00",
-    "endDate": "20231113 20:00:00",
-    "instrument": "btcusdt_kraken",
+    "startDate": "20250113 06:00:00",
+    "endDate": "20250113 20:00:00",
+    "instrument": "btceur_kraken",
     "delayOrderMs": 0,
     "feesCommissionsIncluded": false,
     "multithreadConfiguration": "single_thread"
@@ -12,11 +12,11 @@
     "parameters": {
       "level": "0",
       "skewLevel": "0",
+      "minQuantityFollow": 0.006,
       "seed": 5,
       "quantity": "0.001",
       "firstHour": "7.0",
-      "lastHour": "19.0",
-      "ui": 1
+      "lastHour": "19.0"
     }
   }
 }

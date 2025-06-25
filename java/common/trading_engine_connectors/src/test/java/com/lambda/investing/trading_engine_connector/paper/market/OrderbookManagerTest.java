@@ -89,7 +89,7 @@ package com.lambda.investing.trading_engine_connector.paper.market;//package com
 //
 //    }
 //    private Depth createDepth(double bestBid, double bestAsk, double bestBidQty, double bestAskQty) {
-//        Depth depth = new Depth();
+//        Depth depth = Depth.createDepth();
 //        depth.setTimestamp(System.currentTimeMillis());
 //        depth.setInstrument(instrumentPk);
 //        depth.setLevels(1);

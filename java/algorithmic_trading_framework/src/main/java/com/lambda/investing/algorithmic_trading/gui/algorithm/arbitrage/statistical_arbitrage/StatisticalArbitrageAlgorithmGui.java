@@ -1,16 +1,15 @@
 package com.lambda.investing.algorithmic_trading.gui.algorithm.arbitrage.statistical_arbitrage;
 
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
+
 import com.intellij.uiDesigner.core.GridConstraints;
 import com.intellij.uiDesigner.core.GridLayoutManager;
-import com.intellij.uiDesigner.core.Spacer;
-import com.lambda.investing.ArrayUtils;
 import com.lambda.investing.Configuration;
+import com.lambda.investing.LambdaThreadFactory;
 import com.lambda.investing.TimeSeriesQueue;
 import com.lambda.investing.algorithmic_trading.PnlSnapshot;
+import com.lambda.investing.algorithmic_trading.PortfolioSnapshot;
 import com.lambda.investing.algorithmic_trading.gui.algorithm.AlgorithmGui;
 import com.lambda.investing.algorithmic_trading.gui.algorithm.DepthTableModel;
-import com.lambda.investing.algorithmic_trading.gui.algorithm.market_making.MarketMakingAlgorithmGui;
 import com.lambda.investing.algorithmic_trading.gui.timeseries.TickTimeSeries;
 import com.lambda.investing.connector.ordinary.thread_pool.ThreadPoolExecutorChannels;
 import com.lambda.investing.market_data_connector.parquet_file_reader.ParquetMarketDataConnectorPublisher;
@@ -19,7 +18,6 @@ import com.lambda.investing.model.market_data.Trade;
 import com.lambda.investing.model.trading.ExecutionReport;
 import com.lambda.investing.model.trading.ExecutionReportStatus;
 import com.lambda.investing.model.trading.OrderRequest;
-import com.lambda.investing.model.trading.Verb;
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.curator.shaded.com.google.common.collect.EvictingQueue;
@@ -29,15 +27,14 @@ import org.jfree.chart.ChartTheme;
 
 import javax.swing.*;
 import javax.swing.event.ChangeEvent;
-import javax.swing.table.AbstractTableModel;
 import java.awt.*;
+import java.util.*;
 import java.util.List;
 import java.util.Queue;
-import java.util.*;
 import java.util.concurrent.*;
 
-import static com.lambda.investing.ArrayUtils.ArrayReverse;
-import static com.lambda.investing.algorithmic_trading.AlgorithmParameters.*;
+import static com.lambda.investing.algorithmic_trading.AlgorithmParameters.getParameterDouble;
+import static com.lambda.investing.algorithmic_trading.AlgorithmParameters.getParameterString;
 import static com.lambda.investing.algorithmic_trading.gui.main.MainMenuGUI.IS_BACKTEST;
 import static com.lambda.investing.model.Util.toJsonString;
 import static com.lambda.investing.model.asset.Instrument.round;
@@ -126,7 +123,7 @@ public class StatisticalArbitrageAlgorithmGui implements AlgorithmGui {
 //        zscoreTimeSeries = new TickTimeSeries(theme, zscoresPanelTick, "ZScore", "Date", "ZScore");
         initializeThreadpool();
         initializeSpeedSlider();
-        updatePnlSnapshot(new PnlSnapshot());//initial update
+        updatePnlSnapshot(new PnlSnapshot(""));//initial update
         depthTabs.remove(0);//remove na tab
 
 
@@ -145,19 +142,13 @@ public class StatisticalArbitrageAlgorithmGui implements AlgorithmGui {
 
     private void initializeThreadpool() {
 
-        ThreadFactoryBuilder threadFactoryBuilder = new ThreadFactoryBuilder();
-        threadFactoryBuilder.setNameFormat("instrument_StatisticalArbitrageAlgorithmGuiBuffered" + "-%d");
-        threadFactoryBuilder.setPriority(Thread.MIN_PRIORITY);
-        ThreadFactory namedThreadFactory = threadFactoryBuilder.build();
+        ThreadFactory namedThreadFactory = LambdaThreadFactory.createThreadFactory("instrument_StatisticalArbitrageAlgorithmGuiBuffered", Thread.MIN_PRIORITY);
 
         guiThreadPoolBuffered = new ThreadPoolExecutorChannels(null, 1, GUI_THREAD_POOL_SIZE_BUFFERED, 60, TimeUnit.SECONDS
                 , new LinkedBlockingQueue<Runnable>(), namedThreadFactory, true);
 
 
-        ThreadFactoryBuilder threadFactoryBuilder1 = new ThreadFactoryBuilder();
-        threadFactoryBuilder1.setNameFormat("instrument_StatisticalArbitrageAlgorithmGui" + "-%d");
-        threadFactoryBuilder1.setPriority(Thread.MIN_PRIORITY);
-        ThreadFactory namedThreadFactory1 = threadFactoryBuilder1.build();
+        ThreadFactory namedThreadFactory1 = LambdaThreadFactory.createThreadFactory("instrument_StatisticalArbitrageAlgorithmGui", Thread.MIN_PRIORITY);
 
         guiThreadPool = new ThreadPoolExecutorChannels("StatisticalArbitrageAlgorithmGui", 1, GUI_THREAD_POOL_SIZE, 60, TimeUnit.SECONDS
                 , new LinkedBlockingQueue<Runnable>(), namedThreadFactory1, false);
@@ -311,7 +302,8 @@ public class StatisticalArbitrageAlgorithmGui implements AlgorithmGui {
             }
 
             if (isTrade) {
-                Trade trade = new Trade(executionReport);
+                Trade trade = Trade.getInstance();
+                trade.setTradeFromExecutionReport(executionReport);
                 updateTrade(trade);
             }
 
@@ -399,6 +391,11 @@ public class StatisticalArbitrageAlgorithmGui implements AlgorithmGui {
             }
         };
         updateGUI(runnable);
+
+    }
+
+    @Override
+    public void updatePortfolioSnapshot(PortfolioSnapshot portfolioSnapshot) {
 
     }
 

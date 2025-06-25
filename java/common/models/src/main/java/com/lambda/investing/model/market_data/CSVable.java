@@ -16,10 +16,14 @@ public abstract class CSVable implements Serializable {
 
 	public static CSVable getCSVAble(Object parquetObject, Instrument instrument) {
 		if (parquetObject instanceof DepthParquet) {
-			return new Depth((DepthParquet) parquetObject, instrument);
+			Depth depth = Depth.getInstance();
+			depth.setDepthFromParquet((DepthParquet) parquetObject, instrument);
+			return depth;
 		}
 		if (parquetObject instanceof TradeParquet) {
-			return new Trade((TradeParquet) parquetObject, instrument);
+			Trade trade = Trade.getInstance();
+			trade.setTradeFromParquet((TradeParquet) parquetObject, instrument);
+			return trade;
 		}
 
 		logger.error("getCSVAble parquetObject not recognized! return null");

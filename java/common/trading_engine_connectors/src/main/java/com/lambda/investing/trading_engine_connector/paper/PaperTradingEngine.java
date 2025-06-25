@@ -1,7 +1,8 @@
 package com.lambda.investing.trading_engine_connector.paper;
 
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import com.lambda.investing.ArrayUtils;
 import com.lambda.investing.Configuration;
+import com.lambda.investing.LambdaThreadFactory;
 import com.lambda.investing.connector.ConnectorConfiguration;
 import com.lambda.investing.connector.ConnectorProvider;
 import com.lambda.investing.connector.zero_mq.ZeroMqProvider;
@@ -41,6 +42,8 @@ import static com.lambda.investing.Configuration.DELAY_ORDER_BACKTEST_MS;
 import static com.lambda.investing.model.Util.toJsonString;
 import static com.lambda.investing.model.portfolio.Portfolio.REQUESTED_PORTFOLIO_INFO;
 import static com.lambda.investing.trading_engine_connector.ZeroMqTradingEngineConnector.ALL_ALGORITHMS_SUBSCRIPTION;
+import static net.openhft.affinity.AffinityStrategies.DIFFERENT_CORE;
+import static net.openhft.affinity.AffinityStrategies.SAME_CORE;
 
 
 public class PaperTradingEngine extends AbstractPaperExecutionReportConnectorPublisher
@@ -173,7 +176,7 @@ public class PaperTradingEngine extends AbstractPaperExecutionReportConnectorPub
     public void setInstrumentsList(List<Instrument> instrumentsList) {
         this.instrumentsList = instrumentsList;
         //
-        logger.info("creating {} orderbooks", instrumentsList.size());
+        logger.info("creating {} orderbooks: {}", instrumentsList.size(), ArrayUtils.PrintArrayListString(instrumentsList, ","));
         orderbookManagerMap = new HashMap<>(instrumentsList.size());
         for (Instrument instrument : instrumentsList) {
             Orderbook orderbook = new Orderbook(instrument.getPriceTick());
@@ -182,9 +185,6 @@ public class PaperTradingEngine extends AbstractPaperExecutionReportConnectorPub
             if (!USE_ORDER_MATCHING_ENGINE) {
                 orderbookManager = new OrderbookManager(orderbook, this, instrument.getPrimaryKey());
             } else {
-                //to avoid stack overflows!
-                OrderMatchEngine.REFRESH_DEPTH_ORDER_REQUEST = false;
-                OrderMatchEngine.REFRESH_DEPTH_TRADES = false;
                 orderbookManager = new OrderMatchEngine(orderbook, this, instrument.getPrimaryKey());
 
             }
@@ -384,10 +384,10 @@ public class PaperTradingEngine extends AbstractPaperExecutionReportConnectorPub
         LatencyEngine marketDataLatencyEngine = null;
 
         private int threadsPublishingMd, threadsPublishingER;
-        ThreadFactory namedThreadFactoryMarketData = new ThreadFactoryBuilder()
-                .setNameFormat("MarketDataProviderIn-MarketData-%d").build();
-        ThreadFactory namedThreadFactoryExecutionReport = new ThreadFactoryBuilder()
-                .setNameFormat("MarketDataProviderIn-ExecutionReport-%d").build();
+
+        ThreadFactory namedThreadFactoryMarketData = LambdaThreadFactory.createThreadFactory("MarketDataProviderIn-MarketData");
+        ThreadFactory namedThreadFactoryExecutionReport = LambdaThreadFactory.createThreadFactory("MarketDataProviderIn-ExecutionReport");
+
         ThreadPoolExecutor marketDataPool, executionReportPool;
         boolean killMarketDataPool = false, killExecutionReportPool = false;
         protected Map<ExecutionReportListener, String> executionReportListenersManager;//for backtesting

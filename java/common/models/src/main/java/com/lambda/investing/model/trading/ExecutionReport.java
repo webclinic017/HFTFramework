@@ -50,6 +50,10 @@ public class ExecutionReport {
 		this.verb = orderRequest.getVerb();
 	}
 
+	public void updateTimestampCreation(long timestampCreation) {
+		this.timestampCreation = Math.max(timestampCreation, this.timestampCreation);
+	}
+
 	public String toJsonString() {
 		return Util.toJsonString(this);
 	}

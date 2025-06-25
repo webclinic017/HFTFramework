@@ -38,27 +38,26 @@ public class AlphaAvellanedaStoikov extends RLAbstractMarketMaking {
     }
 
     @Override
-    protected void updateCurrentCustomColumn(String instrumentPk) {
+    protected void updateCurrentCustomColumn() {
         //add custom columns to trade csv
-        addCurrentCustomColumn(instrumentPk, "midpricePeriodWindow", (double) algorithm.midpricePeriodWindow);
-        addCurrentCustomColumn(instrumentPk, "changeKPeriodSeconds", (double) algorithm.changeKPeriodSeconds);
-        addCurrentCustomColumn(instrumentPk, "riskAversion", algorithm.riskAversion);
-        addCurrentCustomColumn(instrumentPk, "skew", algorithm.skew);
+        addCurrentCustomColumn(this.instrument.getPrimaryKey(), "midpricePeriodWindow", (double) algorithm.midpricePeriodWindow);
+        addCurrentCustomColumn(this.instrument.getPrimaryKey(), "changeKPeriodSeconds", (double) algorithm.changeKPeriodSeconds);
+        addCurrentCustomColumn(this.instrument.getPrimaryKey(), "riskAversion", algorithm.riskAversion);
+        addCurrentCustomColumn(this.instrument.getPrimaryKey(), "skew", algorithm.skew);
         if (algorithm.kDefault != null && algorithm.kDefault != AvellanedaStoikov.NON_SET_PARAMETER) {
-            addCurrentCustomColumn(instrumentPk, "kDefault", algorithm.kDefault);
+            addCurrentCustomColumn(this.instrument.getPrimaryKey(), "kDefault", algorithm.kDefault);
         }
         if (algorithm.aDefault != null && algorithm.aDefault != AvellanedaStoikov.NON_SET_PARAMETER) {
-            addCurrentCustomColumn(instrumentPk, "aDefault", algorithm.aDefault);
+            addCurrentCustomColumn(this.instrument.getPrimaryKey(), "aDefault", algorithm.aDefault);
         }
-        addCurrentCustomColumn(instrumentPk, "iterations", (double) iterations.get());
+        addCurrentCustomColumn(this.instrument.getPrimaryKey(), "iterations", (double) iterations.get());
         //		parameters
         try {
-            addCurrentCustomColumn(instrumentPk, "bid", (double) this.lastDepth.getBestBid());
-            addCurrentCustomColumn(instrumentPk, "ask", (double) this.lastDepth.getBestAsk());
-            addCurrentCustomColumn(instrumentPk, "bid_qty", (double) this.lastDepth.getBestBidQty());
-            addCurrentCustomColumn(instrumentPk, "ask_qty", (double) this.lastDepth.getBestAskQty());
-            addCurrentCustomColumn(instrumentPk, "imbalance", (double) this.lastDepth.getImbalance());
-            addCurrentCustomColumn(instrumentPk, "reward", (double) this.rewardStartStep);
+            addCurrentCustomColumn(this.instrument.getPrimaryKey(), "ask", getLastDepth(instrument).getBestAsk());
+            addCurrentCustomColumn(this.instrument.getPrimaryKey(), "bid_qty", getLastDepth(instrument).getBestBidQty());
+            addCurrentCustomColumn(this.instrument.getPrimaryKey(), "ask_qty", getLastDepth(instrument).getBestAskQty());
+            addCurrentCustomColumn(this.instrument.getPrimaryKey(), "imbalance", getLastDepth(instrument).getImbalance());
+            addCurrentCustomColumn(this.instrument.getPrimaryKey(), "reward", this.rewardStartStep);
         } catch (Exception e) {
         }
     }
@@ -66,9 +65,19 @@ public class AlphaAvellanedaStoikov extends RLAbstractMarketMaking {
     @Override
     public void setAction(double[] actionValues) {
         super.setAction(actionValues);
-
+        if (actionValues == null || actionValues.length == 0) {
+            logger.warn("[{}] setAction called with empty actionValues before -> skip it", this.getCurrentTime());
+            return;
+        }
         actionValues = GetActionValues(actionValues);
-
+        if (actionValues == null || actionValues.length < AvellanedaAction.SIZE_ARRAY_ACTION) {
+            if (actionValues == null) {
+                logger.error("[{}] setAction called with empty actionValues -> skip it", this.getCurrentTime());
+            } else {
+                logger.error("[{}] setAction called with empty actionValues or {} less columns than {} -> skip it", this.getCurrentTime(), actionValues.length, AvellanedaAction.SIZE_ARRAY_ACTION);
+            }
+            return;
+        }
         if (!Double.isNaN(actionValues[AvellanedaAction.SKEW_PRICE_INDEX]))
             algorithm.skew = actionValues[AvellanedaAction.SKEW_PRICE_INDEX];
         if (!Double.isNaN(actionValues[AvellanedaAction.WINDOWS_INDEX]))

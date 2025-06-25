@@ -16,12 +16,7 @@ public class ThreadPoolExecutorChannels extends ThreadPoolExecutor {
 	protected final Logger logger = LogManager.getLogger(ThreadPoolExecutorChannels.class);
 
 	/***
-	 *
-	 * ThreadFactory namedThreadFactory = new ThreadFactoryBuilder().setNameFormat("name-%d").build();
-	 * 		ThreadPoolExecutorOrderByChannel ex = new ThreadPoolExecutorOrderByChannel(null, 2, 2, 60, TimeUnit.SECONDS
-	 * 				, new LinkedBlockingQueue<Runnable>(), namedThreadFactory, false);
-	 *
-	 * 		No handle RejectedExecutionException
+	 No handle RejectedExecutionException
 	 * @param name
 	 * @param corePoolSize
 	 * @param maximumPoolSize

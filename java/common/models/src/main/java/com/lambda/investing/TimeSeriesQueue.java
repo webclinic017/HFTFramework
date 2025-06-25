@@ -209,7 +209,7 @@ public class TimeSeriesQueue<K> extends ArrayList<K> implements Queue<K> {
         if (isEmpty()) {
             return new TimeSeriesQueue<>(0);
         }
-        TimeSeriesQueue<K> output = new TimeSeriesQueue<>(size());
+        TimeSeriesQueue<K> output = new TimeSeriesQueue<>(maxSize);
         for (int indexPosition : index) {
             if (indexPosition < 0) {
                 continue;
@@ -227,7 +227,7 @@ public class TimeSeriesQueue<K> extends ArrayList<K> implements Queue<K> {
         if (prices.isEmpty()) {
             return prices;
         }
-        TimeSeriesQueue<Double> logInstrument = new TimeSeriesQueue<>(prices.size());
+        TimeSeriesQueue<Double> logInstrument = new TimeSeriesQueue<>(prices.maxSize);
         for (int i = 0; i < prices.size(); i++) {
             double logReturn = Math.log(prices.get(i));
             logInstrument.offer(logReturn);
@@ -239,7 +239,7 @@ public class TimeSeriesQueue<K> extends ArrayList<K> implements Queue<K> {
         if (prices.isEmpty()) {
             return prices;
         }
-        TimeSeriesQueue<Double> returnsInstrument = new TimeSeriesQueue<>(prices.size() - 1);
+        TimeSeriesQueue<Double> returnsInstrument = new TimeSeriesQueue<>(prices.maxSize - 1);
         for (int i = 1; i < prices.size(); i++) {
             double returnCandle = (prices.get(i) / prices.get(i - 1)) - 1;//like in python : stat_arb.stat_arb_instrument.StatArbInstrument.get_candle_returns
             returnsInstrument.offer(returnCandle);
@@ -251,7 +251,7 @@ public class TimeSeriesQueue<K> extends ArrayList<K> implements Queue<K> {
         if (prices.isEmpty()) {
             return prices;
         }
-        TimeSeriesQueue<Double> output = new TimeSeriesQueue<>(prices.size());
+        TimeSeriesQueue<Double> output = new TimeSeriesQueue<>(prices.maxSize);
         output.offer(prices.getOldest());
         for (int i = 1; i < prices.size(); i++) {
             double value = prices.get(i) == 0 ? prices.get(i - 1) : prices.get(i);
@@ -263,5 +263,13 @@ public class TimeSeriesQueue<K> extends ArrayList<K> implements Queue<K> {
     @Override
     public Object clone() {
         return new TimeSeriesQueue(this);
+    }
+
+    @Override
+    public String toString() {
+        return "TimeSeriesQueue{" +
+                "size=" + size() +
+                " maxSize=" + maxSize +
+                '}';
     }
 }

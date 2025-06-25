@@ -1,6 +1,7 @@
 package com.lambda.investing.connector.zero_mq;
 
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
+
+import com.lambda.investing.LambdaThreadFactory;
 import com.lambda.investing.connector.ConnectorConfiguration;
 import com.lambda.investing.connector.ConnectorPublisher;
 import com.lambda.investing.model.messaging.TypeMessage;
@@ -45,7 +46,7 @@ public class ZeroMqPublisher implements ConnectorPublisher {
         //ThreadPool initialiting
         this.name = name;
         this.threads = threads;
-        ThreadFactory namedThreadFactory = new ThreadFactoryBuilder().setNameFormat(this.name + "-%d").build();
+        ThreadFactory namedThreadFactory = LambdaThreadFactory.createThreadFactory(this.name);
         if (this.threads < 0) {
             poolExecutor = Executors.newCachedThreadPool(namedThreadFactory);
         }

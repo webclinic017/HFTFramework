@@ -3,7 +3,9 @@ package com.lambda.investing.algorithmic_trading.candle_manager;
 import com.lambda.investing.model.asset.Instrument;
 import com.lambda.investing.model.market_data.Depth;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
 
 import static com.lambda.investing.algorithmic_trading.candle_manager.CandleFromTickUpdater.logger;
 

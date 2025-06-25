@@ -23,6 +23,18 @@ public class ConstantSpreadAction extends AbstractAction {
 	public int getNumberActionColumns() {
 		return SIZE_ARRAY_ACTION;
 	}
+
+	public int getNumberActionColumnsDifferent() {
+		//check number of array elements constructor length >1
+		int count = 0;
+		if (levels.length > 1) {
+			count++;
+		}
+		if (skewLevels.length > 1) {
+			count++;
+		}
+		return count;
+	}
 	public ConstantSpreadAction(int[] levels, int[] skewLevels) {
 
 		List<Integer> validInputsSize = new ArrayList<>();

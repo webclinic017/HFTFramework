@@ -7,14 +7,12 @@ import com.lambda.investing.model.trading.*;
 import org.apache.curator.shaded.com.google.common.collect.EvictingQueue;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.joda.time.DateTime;
 
-import java.util.*;
-
+import java.util.Date;
+import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static com.lambda.investing.algorithmic_trading.Algorithm.EXECUTION_REPORT_LOCK;
 import static com.lambda.investing.algorithmic_trading.Algorithm.LOG_LEVEL;
 
 public class QuoteSideManager {
@@ -204,10 +202,15 @@ public class QuoteSideManager {
             if (LOG_LEVEL > LogLevels.SOME_ITERATION_LOG.ordinal()) {
                 logger.info("[{}] {}", new Date(orderRequest.getTimestampCreation()), orderRequest);
             }
-            lastClOrdIdSent.offer(orderRequest.getClientOrderId());
-            clOrdIdPending = orderRequest.getClientOrderId();
-            algorithm.sendOrderRequest(orderRequest);
-            timestampError = Long.MIN_VALUE;
+
+            if (orderRequest.getClientOrderId() == null) {
+                logger.warn("QuoteRequest {} has null clientOrderId, this should not happen", orderRequest);
+            } else {
+                lastClOrdIdSent.offer(orderRequest.getClientOrderId());
+                clOrdIdPending = orderRequest.getClientOrderId();
+                algorithm.sendOrderRequest(orderRequest);
+                timestampError = Long.MIN_VALUE;
+            }
         } catch (LambdaTradingException e) {
             logger.warn("[{}] can't send {} {}", new Date(orderRequest.getTimestampCreation()),
                     orderRequest.getClientOrderId(), e.getMessage());

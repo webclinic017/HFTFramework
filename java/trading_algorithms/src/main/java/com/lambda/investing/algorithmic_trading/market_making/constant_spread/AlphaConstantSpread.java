@@ -57,17 +57,17 @@ public class AlphaConstantSpread extends RLAbstractMarketMaking {
     }
 
     @Override
-    protected void updateCurrentCustomColumn(String instrumentPk) {
-        addCurrentCustomColumn(instrumentPk, "level", (double) algorithm.level);
-        addCurrentCustomColumn(instrumentPk, "skewLevel", (double) algorithm.skewLevel);
-        addCurrentCustomColumn(instrumentPk, "iterations", (double) iterations.get());
+    protected void updateCurrentCustomColumn() {
+        addCurrentCustomColumn(this.instrument.getPrimaryKey(), "level", (double) algorithm.level);
+        addCurrentCustomColumn(this.instrument.getPrimaryKey(), "skewLevel", (double) algorithm.skewLevel);
+        addCurrentCustomColumn(this.instrument.getPrimaryKey(), "iterations", (double) iterations.get());
         try {
-            addCurrentCustomColumn(instrumentPk, "bid", (double) this.lastDepth.getBestBid());
-            addCurrentCustomColumn(instrumentPk, "ask", (double) this.lastDepth.getBestAsk());
-            addCurrentCustomColumn(instrumentPk, "bid_qty", (double) this.lastDepth.getBestBidQty());
-            addCurrentCustomColumn(instrumentPk, "ask_qty", (double) this.lastDepth.getBestAskQty());
-            addCurrentCustomColumn(instrumentPk, "imbalance", (double) this.lastDepth.getImbalance());
-            addCurrentCustomColumn(instrumentPk, "reward", (double) this.rewardStartStep);
+            addCurrentCustomColumn(this.instrument.getPrimaryKey(), "bid", getLastDepth(instrument).getBestBid());
+            addCurrentCustomColumn(this.instrument.getPrimaryKey(), "ask", getLastDepth(instrument).getBestAsk());
+            addCurrentCustomColumn(this.instrument.getPrimaryKey(), "bid_qty", getLastDepth(instrument).getBestBidQty());
+            addCurrentCustomColumn(this.instrument.getPrimaryKey(), "ask_qty", getLastDepth(instrument).getBestAskQty());
+            addCurrentCustomColumn(this.instrument.getPrimaryKey(), "imbalance", getLastDepth(instrument).getImbalance());
+            addCurrentCustomColumn(this.instrument.getPrimaryKey(), "reward", (double) this.rewardStartStep);
         } catch (Exception e) {
         }
 
@@ -76,7 +76,21 @@ public class AlphaConstantSpread extends RLAbstractMarketMaking {
     @Override
     public void setAction(double[] actionValues) {
         super.setAction(actionValues);
+
+        if (actionValues == null || actionValues.length == 0) {
+            logger.warn("[{}] setAction called with empty actionValues before -> skip it", this.getCurrentTime());
+            return;
+        }
         actionValues = GetActionValues(actionValues);
+        if (actionValues == null || actionValues.length < ConstantSpreadAction.SIZE_ARRAY_ACTION) {
+            if (actionValues == null) {
+                logger.error("[{}] setAction called with empty actionValues -> skip it", this.getCurrentTime());
+            } else {
+                logger.error("[{}] setAction called with empty actionValues or {} less columns than {} -> skip it", this.getCurrentTime(), actionValues.length, ConstantSpreadAction.SIZE_ARRAY_ACTION);
+            }
+            return;
+        }
+
         if (!Double.isNaN(actionValues[ConstantSpreadAction.LEVEL_INDEX]))
             algorithm.level = (int) Math.round(actionValues[ConstantSpreadAction.LEVEL_INDEX]);
 

@@ -6,7 +6,6 @@ import com.lambda.investing.algorithmic_trading.*;
 import com.lambda.investing.algorithmic_trading.gui.algorithm.AlgorithmGui;
 import com.lambda.investing.algorithmic_trading.gui.algorithm.arbitrage.statistical_arbitrage.StatisticalArbitrageAlgorithmGui;
 import com.lambda.investing.algorithmic_trading.gui.algorithm.market_making.MarketMakingAlgorithmGui;
-import com.lambda.investing.model.asset.Instrument;
 import com.lambda.investing.model.market_data.Depth;
 import com.lambda.investing.model.market_data.Trade;
 import com.lambda.investing.model.trading.ExecutionReport;
@@ -106,6 +105,11 @@ public class MainMenuGUI extends JFrame implements AlgorithmObserver {
     @Override
     public void onUpdatePnlSnapshot(String algorithmInfo, PnlSnapshot pnlSnapshot) {
         algorithmsMap.get(algorithmInfo).updatePnlSnapshot(pnlSnapshot);
+    }
+
+    @Override
+    public void onUpdatePortfolioSnapshot(String algorithmInfo, PortfolioSnapshot portfolioSnapshot) {
+        algorithmsMap.get(algorithmInfo).updatePortfolioSnapshot(portfolioSnapshot);
     }
 
     @Override

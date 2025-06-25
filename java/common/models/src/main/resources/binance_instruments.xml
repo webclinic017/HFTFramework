@@ -65,9 +65,9 @@
 
 
     <util:list id="binance_instruments" value-type="com.lambda.investing.model.asset.Instrument">
-        <ref bean="btcusdt_binance"/>
-        <ref bean="ethusdt_binance"/>
-        <ref bean="ethbtc_binance"/>
+        <!--        <ref bean="btcusdt_binance"/>-->
+        <!--        <ref bean="ethusdt_binance"/>-->
+        <!--        <ref bean="ethbtc_binance"/>-->
         <ref bean="btceur_binance"/>
         <ref bean="etheur_binance"/>
     </util:list>

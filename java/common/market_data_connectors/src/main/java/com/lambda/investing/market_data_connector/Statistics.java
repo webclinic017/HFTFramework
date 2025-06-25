@@ -1,5 +1,7 @@
 package com.lambda.investing.market_data_connector;
 
+import com.lambda.investing.model.market_data.Depth;
+import com.lambda.investing.model.market_data.Trade;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -48,6 +50,9 @@ public class Statistics implements Runnable{
 				long totalCounter = topicToTotalCounter.getOrDefault(entry.getKey(), 0L);
 				logger.info("\t{}:\t{}\ttotal:{}", entry.getKey(), entry.getValue(), totalCounter);
 			}
+
+			logger.info("Depth.Pool: {}", Depth.logPool());
+			logger.info("Trade.Pool: {}", Trade.logPool());
 			logger.info("****************");
 
 			if (RESET_STATISTICS_PER_UPDATE) {

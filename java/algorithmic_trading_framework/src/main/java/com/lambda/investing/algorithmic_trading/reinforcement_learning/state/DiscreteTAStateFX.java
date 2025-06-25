@@ -3,12 +3,9 @@ package com.lambda.investing.algorithmic_trading.reinforcement_learning.state;
 import com.lambda.investing.algorithmic_trading.reinforcement_learning.ScoreEnum;
 import com.lambda.investing.model.asset.Instrument;
 import com.lambda.investing.model.candle.CandleType;
-import org.apache.commons.lang3.ArrayUtils;
 
 import java.util.ArrayList;
 import java.util.List;
-
-import static com.lambda.investing.algorithmic_trading.technical_indicators.Calculator.EMACalculate;
 
 public class DiscreteTAStateFX extends DiscreteTAState {
     public DiscreteTAStateFX(Instrument instrument, ScoreEnum scoreEnumColumn, CandleType candleType, int[] periods, int numberOfDecimals, int marketHorizonSave) {

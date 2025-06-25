@@ -1,6 +1,7 @@
 package com.lambda.investing.connector.zero_mq;
 
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
+
+import com.lambda.investing.LambdaThreadFactory;
 import com.lambda.investing.connector.ConnectorConfiguration;
 import com.lambda.investing.connector.ConnectorListener;
 import com.lambda.investing.connector.ConnectorProvider;
@@ -98,11 +99,7 @@ public class ZeroMqProvider implements ConnectorProvider {
 
         this.threadsListening = threadsListening;
         //ThreadPool initialiting
-
-        ThreadFactoryBuilder threadFactoryBuilder = new ThreadFactoryBuilder();
-        threadFactoryBuilder.setNameFormat("ZeroMqProvider-OnUpdate-%d");
-        threadFactoryBuilder.setPriority(Thread.NORM_PRIORITY);
-        ThreadFactory namedThreadFactory = threadFactoryBuilder.build();
+        ThreadFactory namedThreadFactory = LambdaThreadFactory.createThreadFactory("ZeroMqProvider-OnUpdate", Thread.NORM_PRIORITY);
 
         this.threadsListening = threadsListening;
         if (this.threadsListening > 0) {

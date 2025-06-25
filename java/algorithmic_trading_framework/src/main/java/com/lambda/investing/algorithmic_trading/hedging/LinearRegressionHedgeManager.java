@@ -6,13 +6,15 @@ import com.lambda.investing.model.asset.Instrument;
 import com.lambda.investing.model.exception.LambdaTradingException;
 import com.lambda.investing.model.market_data.Depth;
 import com.lambda.investing.model.market_data.Trade;
-import com.lambda.investing.model.trading.*;
+import com.lambda.investing.model.trading.ExecutionReport;
+import com.lambda.investing.model.trading.OrderRequest;
+import com.lambda.investing.model.trading.Verb;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.io.FileNotFoundException;
+import java.util.Date;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -23,6 +25,7 @@ public class LinearRegressionHedgeManager implements HedgeManager {
     protected Instrument instrument;
     protected SyntheticInstrument syntheticInstrument;
     protected Set<Instrument> interestedInstruments = new HashSet<>();
+    protected Set<String> interestedInstrumentPks = new HashSet<>();
     protected String syntheticInstrumentFile;
     protected Map<String, Double> askMap = new ConcurrentHashMap<>();
     protected Map<String, Double> bidMap = new ConcurrentHashMap<>();
@@ -36,10 +39,19 @@ public class LinearRegressionHedgeManager implements HedgeManager {
     public void setSyntheticInstrument(SyntheticInstrument instrument) {
         this.syntheticInstrument = instrument;
         interestedInstruments.addAll(this.syntheticInstrument.getInstruments());
+        interestedInstrumentPks.addAll(this.syntheticInstrument.getInstrumentPks());
     }
 
     @Override
     public boolean onExecutionReportUpdate(ExecutionReport executionReport) {
+        //Hedger instrument
+
+        if (interestedInstrumentPks.contains(executionReport.getInstrument())) {
+            logger.info("[{}] {}-{}  {}", new Date(executionReport.getTimestampCreation()),
+                    executionReport.getClientOrderId(), executionReport.getExecutionReportStatus(),
+                    executionReport);
+        }
+
         return false;
     }
 
@@ -61,8 +73,9 @@ public class LinearRegressionHedgeManager implements HedgeManager {
     }
 
     private double getHedgeRatio(Verb verbMain, Instrument underlyingInstrument, double beta) {
+        // if main moves 1 is explained by hedger moves beta (0.5) => to hedge main with hedger we have to invest beta (2)
+        // in python stat_arb_instrument.stat_arb_instrument.StatArbInstrument.get_hedge_ratio
         return beta;
-
     }
 
 
@@ -100,9 +113,10 @@ public class LinearRegressionHedgeManager implements HedgeManager {
             orderRequestSynth = algorithm
                     .createMarketOrderRequest(underlyingInstrument, verbHedgeUnderlyingInstrument, quantityTrade);
 
+            logger.info("[{}] {}-{}  {}", algorithm.getCurrentTime(),
+                    orderRequestSynth.getClientOrderId(), orderRequestSynth.getOrderRequestAction(),
+                    orderRequestSynth);
 
-            logger.info("Hedging {} {} on {} with {} {} on {}", verbMain, quantityOnMain, instrument, verbHedgeUnderlyingInstrument, quantityTrade,
-                    underlyingInstrument);
             try {
                 algorithm.sendOrderRequest(orderRequestSynth);
             } catch (LambdaTradingException e) {

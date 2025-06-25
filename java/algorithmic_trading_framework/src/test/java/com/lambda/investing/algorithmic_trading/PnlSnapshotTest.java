@@ -41,20 +41,20 @@ public class PnlSnapshotTest {
 	}
 
 	private Depth createDepth(double bestBid, double bestAsk, double bestBidQty, double bestAskQty) {
-		Depth depth = new Depth();
+		Depth depth = Depth.getInstance();
 		depth.setTimestamp(System.currentTimeMillis());
 		depth.setInstrument(instrumentPk);
 		depth.setLevels(1);
-		Double[] asks = new Double[] { bestAsk, bestAsk + 0.01 };
+		double[] asks = new double[]{bestAsk, bestAsk + 0.01};
 		depth.setAsks(asks);
 
-		Double[] bids = new Double[]{bestBid, bestAsk - 0.01};
+		double[] bids = new double[]{bestBid, bestAsk - 0.01};
 		depth.setBids(bids);
 
-		Double[] asksQ = new Double[]{bestAskQty, bestAskQty};
+		double[] asksQ = new double[]{bestAskQty, bestAskQty};
 		depth.setAsksQuantities(asksQ);
 
-		Double[] bidsQ = new Double[]{bestBidQty, bestBidQty};
+		double[] bidsQ = new double[]{bestBidQty, bestBidQty};
 		depth.setBidsQuantities(bidsQ);
 
 		String[] algorithms = new String[]{Depth.ALGORITHM_INFO_MM, Depth.ALGORITHM_INFO_MM};
@@ -67,7 +67,7 @@ public class PnlSnapshotTest {
 	}
 
 	@Test public void testPnlUpdatesClosePosition() {
-		PnlSnapshot pnlSnapshot = new PnlSnapshot();
+		PnlSnapshot pnlSnapshot = new PnlSnapshot(instrumentPk);
 		pnlSnapshot.setAlgorithmInfo(algoInfo);
 		//buy 100@101
 		pnlSnapshot.updateExecutionReport(createExecutionReport(Verb.Buy, 101, 100));
@@ -94,7 +94,7 @@ public class PnlSnapshotTest {
 	}
 
 	@Test public void testPnlOrderedUpdatesClosePosition() {
-		PnlSnapshot pnlSnapshot = new PnlSnapshotOrders();
+		PnlSnapshot pnlSnapshot = new PnlSnapshotOrders(instrumentPk);
 		pnlSnapshot.setAlgorithmInfo(algoInfo);
 		//buy 100@101
 		pnlSnapshot.updateExecutionReport(createExecutionReport(Verb.Buy, 101, 100));
@@ -120,7 +120,7 @@ public class PnlSnapshotTest {
 	}
 
 	@Test public void testPnlOrderedUpdatesClosePositionInvert() {
-		PnlSnapshot pnlSnapshot = new PnlSnapshotOrders();
+		PnlSnapshot pnlSnapshot = new PnlSnapshotOrders(instrumentPk);
 		pnlSnapshot.setAlgorithmInfo(algoInfo);
 		//sell 100@101
 		pnlSnapshot.updateExecutionReport(createExecutionReport(Verb.Sell, 101, 100));
@@ -147,7 +147,7 @@ public class PnlSnapshotTest {
 	}
 
 	@Test public void testPnlUpdatesOpenPosition() {
-		PnlSnapshot pnlSnapshot = new PnlSnapshot();
+		PnlSnapshot pnlSnapshot = new PnlSnapshot(instrumentPk);
 		//buy 100@101
 		pnlSnapshot.updateExecutionReport(createExecutionReport(Verb.Buy, 101, 100));
 
@@ -166,7 +166,7 @@ public class PnlSnapshotTest {
 	}
 
 	@Test public void testPnlOrderedUpdatesOpenPosition() {
-		PnlSnapshotOrders pnlSnapshot = new PnlSnapshotOrders();
+		PnlSnapshotOrders pnlSnapshot = new PnlSnapshotOrders(instrumentPk);
 		//buy 100@101
 		pnlSnapshot.setAlgorithmInfo(algoInfo);
 		pnlSnapshot.updateExecutionReport(createExecutionReport(Verb.Buy, 101, 100));
@@ -185,7 +185,7 @@ public class PnlSnapshotTest {
 	}
 
 	@Test public void testPnlUpdatesIncreasingOpenPosition() {
-		PnlSnapshot pnlSnapshot = new PnlSnapshot();
+		PnlSnapshot pnlSnapshot = new PnlSnapshot(instrumentPk);
 		pnlSnapshot.setAlgorithmInfo(algoInfo);
 		//buy 100@101
 		pnlSnapshot.updateExecutionReport(createExecutionReport(Verb.Buy, 101, 100));
@@ -223,7 +223,7 @@ public class PnlSnapshotTest {
 	}
 
 	@Test public void testPnlOrderedUpdatesIncreasingOpenPosition() {
-		PnlSnapshotOrders pnlSnapshot = new PnlSnapshotOrders();
+		PnlSnapshotOrders pnlSnapshot = new PnlSnapshotOrders(instrumentPk);
 		pnlSnapshot.setAlgorithmInfo(algoInfo);
 		//buy 100@101
 		pnlSnapshot.updateExecutionReport(createExecutionReport(Verb.Buy, 101, 100));
@@ -262,7 +262,7 @@ public class PnlSnapshotTest {
 	}
 
 	@Test public void testPnlOrderedUpdatesIncreasingOpenPositionInvert() {
-		PnlSnapshotOrders pnlSnapshot = new PnlSnapshotOrders();
+		PnlSnapshotOrders pnlSnapshot = new PnlSnapshotOrders(instrumentPk);
 		pnlSnapshot.setAlgorithmInfo(algoInfo);
 		//sell 100@101
 		pnlSnapshot.updateExecutionReport(createExecutionReport(Verb.Sell, 101, 100));
@@ -303,7 +303,7 @@ public class PnlSnapshotTest {
 	}
 
 	@Test public void testPnlUpdatesChangeSide() {
-		PnlSnapshot pnlSnapshot = new PnlSnapshot();
+		PnlSnapshot pnlSnapshot = new PnlSnapshot(instrumentPk);
 		pnlSnapshot.setAlgorithmInfo(algoInfo);
 		//buy 100@101
 		pnlSnapshot.updateExecutionReport(createExecutionReport(Verb.Buy, 101, 100));
@@ -320,7 +320,7 @@ public class PnlSnapshotTest {
 	}
 
 	@Test public void testPnlOrdersUpdatesChangeSide() {
-		PnlSnapshotOrders pnlSnapshot = new PnlSnapshotOrders();
+		PnlSnapshotOrders pnlSnapshot = new PnlSnapshotOrders(instrumentPk);
 		pnlSnapshot.setAlgorithmInfo(algoInfo);
 		//buy 100@101
 		pnlSnapshot.updateExecutionReport(createExecutionReport(Verb.Buy, 101, 100));
@@ -337,7 +337,7 @@ public class PnlSnapshotTest {
 	}
 
 	@Test public void testPnlOrdersUpdatesChangeSideInvert() {
-		PnlSnapshotOrders pnlSnapshot = new PnlSnapshotOrders();
+		PnlSnapshotOrders pnlSnapshot = new PnlSnapshotOrders(instrumentPk);
 		pnlSnapshot.setAlgorithmInfo(algoInfo);
 		//buy 100@101
 		pnlSnapshot.updateExecutionReport(createExecutionReport(Verb.Sell, 101, 100));

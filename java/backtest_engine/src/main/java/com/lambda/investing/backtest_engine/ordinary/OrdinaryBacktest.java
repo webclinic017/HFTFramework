@@ -1,7 +1,8 @@
 package com.lambda.investing.backtest_engine.ordinary;
 
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
+
 import com.lambda.investing.Configuration;
+import com.lambda.investing.LambdaThreadFactory;
 import com.lambda.investing.backtest_engine.AbstractBacktest;
 import com.lambda.investing.backtest_engine.BacktestConfiguration;
 import com.lambda.investing.connector.ConnectorConfiguration;
@@ -23,6 +24,7 @@ import com.lambda.investing.trading_engine_connector.paper.PaperTradingEngine;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 
 public class OrdinaryBacktest extends AbstractBacktest {
@@ -212,11 +214,8 @@ public class OrdinaryBacktest extends AbstractBacktest {
             //ER has max priority on threadpools
             ThreadPoolExecutor erThreadPoolExecutor = (ThreadPoolExecutor) Executors
                     .newFixedThreadPool(Configuration.BACKTEST_THREADS_PUBLISHING_EXECUTION_REPORTS);
-            ThreadFactoryBuilder threadFactoryBuilder = new ThreadFactoryBuilder();
-            threadFactoryBuilder.setNameFormat("ExecutionReportPublisher -%d").build();
-            threadFactoryBuilder.setPriority(Thread.MAX_PRIORITY);
-
-            erThreadPoolExecutor.setThreadFactory(threadFactoryBuilder.build());
+            ThreadFactory threadFactory = LambdaThreadFactory.createThreadFactory("ExecutionReportPublisher", Thread.MAX_PRIORITY);
+            erThreadPoolExecutor.setThreadFactory(threadFactory);
             //executionReports on a differentThreadPool
             routingMap.put(TypeMessage.execution_report, erThreadPoolExecutor);
             ordinaryConnectorPublisherProvider.setRoutingPool(routingMap);

@@ -1,6 +1,7 @@
 package com.lambda.investing.algorithmic_trading;
 
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
+
+import com.lambda.investing.LambdaThreadFactory;
 import com.lambda.investing.model.market_data.Depth;
 import com.lambda.investing.model.market_data.Trade;
 import com.lambda.investing.model.trading.ExecutionReport;
@@ -27,10 +28,7 @@ public class AlgorithmNotifier {
         this.algorithmInfo = algorithm.algorithmInfo;
         this.algorithm = algorithm;
         if (isMultithreaded()) {
-            ThreadFactoryBuilder threadFactoryBuilder = new ThreadFactoryBuilder();
-            threadFactoryBuilder.setNameFormat(this.algorithmInfo + "_notifier" + "-%d");
-            threadFactoryBuilder.setPriority(Thread.MIN_PRIORITY);
-            namedThreadFactory = threadFactoryBuilder.build();
+            namedThreadFactory = LambdaThreadFactory.createThreadFactory(this.algorithmInfo + "_notifier", Thread.MIN_PRIORITY);
             notifierPool = (ThreadPoolExecutor) Executors.newFixedThreadPool(this.threadsNotifier, namedThreadFactory);
         }
     }
@@ -43,7 +41,7 @@ public class AlgorithmNotifier {
         this.algorithmInfo = algorithmInfo;
     }
 
-    //trades
+    //pnl snapshots
     private void _notifyObserversOnUpdatePnlSnapshot(PnlSnapshot pnlSnapshot) {
         for (AlgorithmObserver algorithmObserver : algorithm.getAlgorithmObservers()) {
             algorithmObserver.onUpdatePnlSnapshot(this.algorithmInfo, pnlSnapshot);
@@ -61,6 +59,26 @@ public class AlgorithmNotifier {
             }
         }
     }
+
+    //portfolio snapshots
+    private void _notifyObserversOnUpdatePortfolioSnapshot(PortfolioSnapshot portfolioSnapshot) {
+        for (AlgorithmObserver algorithmObserver : algorithm.getAlgorithmObservers()) {
+            algorithmObserver.onUpdatePortfolioSnapshot(this.algorithmInfo, portfolioSnapshot);
+        }
+    }
+
+    public void notifyObserversOnUpdatePortfolioSnapshot(PortfolioSnapshot portfolioSnapshot) {
+        if (algorithm.getAlgorithmObservers().size() > 0) {
+            if (isMultithreaded()) {
+                notifierPool.submit(() -> {
+                    _notifyObserversOnUpdatePortfolioSnapshot(portfolioSnapshot);
+                });
+            } else {
+                _notifyObserversOnUpdatePortfolioSnapshot(portfolioSnapshot);
+            }
+        }
+    }
+
 
     public void notifyObserversOnUpdateDepth(Depth depth) {
         if (algorithm.getAlgorithmObservers().size() > 0) {

@@ -1,7 +1,6 @@
 package com.lambda.investing.model.market_data;
 
 import com.alibaba.fastjson2.annotation.JSONField;
-import com.google.common.primitives.Doubles;
 import com.lambda.investing.ArrayUtils;
 import com.lambda.investing.model.asset.Instrument;
 import com.lambda.investing.model.trading.Verb;
@@ -18,6 +17,9 @@ import static com.lambda.investing.model.Util.*;
 @Setter
 public class Depth extends CSVable implements Cloneable {
 
+    public static double DEFAULT_VALUE = Double.NaN;
+
+
     public static String ALGORITHM_INFO_MM = "MarketMaker_Parquet";
 
     private static Calendar UTC_CALENDAR = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
@@ -25,21 +27,210 @@ public class Depth extends CSVable implements Cloneable {
     public static int MAX_DEPTH_CSV = 5;
 
     //	private transient Instrument instrument;
-
     private String instrument;
 
     private long timestamp;
 
 
-    private Double[] bidsQuantities, asksQuantities, bids, asks;//TODO change to Bigdecimal
+    private double[] bidsQuantities, asksQuantities, bids, asks;
 
     private List<String>[] bidsAlgorithmInfo, asksAlgorithmInfo;//just for backtesting
 
 
-    private int levels, askLevels, bidLevels;
+    private int levels, askLevels, bidLevels;//best is 0 , worst usually is 4
 
 
     private long timeToNextUpdateMs = Long.MIN_VALUE;
+
+    private static DepthPool DEPTH_POOL = new DepthPool();
+
+    public static boolean isDefaultValue(double value) {
+        return Double.isNaN(value);
+    }
+
+    public static Depth getInstance() {
+        return new Depth();
+    }
+
+    public static synchronized Depth getInstancePool() {
+        Depth depth = DEPTH_POOL.checkOut();
+        depth.reset();
+        return depth;
+    }
+
+    public void delayTimestamp(long delay) {
+        if (delay <= 0)
+            return;
+        this.timestamp += delay;
+        this.timeToNextUpdateMs -= delay;
+        if (this.timeToNextUpdateMs < 0) {
+            this.timeToNextUpdateMs = 0;
+        }
+    }
+
+
+    public static Depth copyFrom(Depth depth) {
+        Depth newDepth = getInstancePool();
+        newDepth.setInstrument(depth.getInstrument());
+        newDepth.setTimestamp(depth.getTimestamp());
+        newDepth.setBidsQuantities(depth.getBidsQuantities());
+        newDepth.setAsksQuantities(depth.getAsksQuantities());
+        newDepth.setBids(depth.getBids());
+        newDepth.setAsks(depth.getAsks());
+        newDepth.setBidsAlgorithmInfo(depth.getBidsAlgorithmInfo());
+        newDepth.setAsksAlgorithmInfo(depth.getAsksAlgorithmInfo());
+        newDepth.setLevels(depth.getLevels());
+        newDepth.setAskLevels(depth.getAskLevels());
+        newDepth.setBidLevels(depth.getBidLevels());
+        newDepth.setTimeToNextUpdateMs(depth.getTimeToNextUpdateMs());
+        newDepth.setLevelsFromData();
+        return newDepth;
+    }
+
+    public void delete() {
+        delete(-1);
+    }
+
+    public void delete(int milliseconds) {
+        if (milliseconds > 0) {
+            DEPTH_POOL.lazyCheckIn(this, milliseconds);
+        } else {
+            DEPTH_POOL.checkIn(this);
+        }
+    }
+
+
+    public static String logPool() {
+        return DEPTH_POOL.toString();
+    }
+
+    private double[] RemoveLevelAndShiftToLeft(double[] input, int level) {
+        for (int nextLevel = level; nextLevel < input.length - 1; nextLevel++) {
+            input[nextLevel] = input[nextLevel + 1];
+        }
+        input[input.length - 1] = DEFAULT_VALUE; //remove last element
+        return input;
+    }
+
+    public static int getNonNullLength(double[] arr) {
+        int count = 0;
+        for (double el : arr)
+            if (!Depth.isDefaultValue(el))
+                ++count;
+        return count;
+    }
+
+    private void reset() {
+        bidsQuantities = null;
+        asksQuantities = null;
+        bids = null;
+        asks = null;
+        bidsAlgorithmInfo = null;
+        asksAlgorithmInfo = null;
+        timeToNextUpdateMs = Long.MIN_VALUE;
+        timestamp = 0;
+    }
+
+    private Depth() {
+    }
+
+    public void setDepthFromParquet(DepthParquet depthParquet, Instrument instrument) {
+        UTC_CALENDAR.setTimeInMillis(depthParquet.getTimestamp());
+        this.instrument = instrument.getPrimaryKey();
+        this.timestamp = depthParquet.getTimestamp();
+
+        //from csv
+        if (levels == 0) {
+            levels = MAX_DEPTH_CSV;
+        }
+        this.bidsQuantities = new double[levels];
+        this.asksQuantities = new double[levels];
+        this.bids = new double[levels];
+        this.asks = new double[levels];
+        Arrays.fill(bidsQuantities, DEFAULT_VALUE);
+        Arrays.fill(asksQuantities, DEFAULT_VALUE);
+        Arrays.fill(bids, DEFAULT_VALUE);
+        Arrays.fill(asks, DEFAULT_VALUE);
+
+        if (depthParquet.getBidPrice0() != null) {
+            this.bids[0] = depthParquet.getBidPrice0();
+        }
+        if (depthParquet.getBidPrice1() != null) {
+            this.bids[1] = depthParquet.getBidPrice1();
+        }
+        if (depthParquet.getBidPrice2() != null) {
+            this.bids[2] = depthParquet.getBidPrice2();
+        }
+        if (depthParquet.getBidPrice3() != null) {
+            this.bids[3] = depthParquet.getBidPrice3();
+        }
+        if (depthParquet.getBidPrice4() != null) {
+            this.bids[4] = depthParquet.getBidPrice4();
+        }
+        //		if (depthParquet.getBidPrice5() != null) {
+        //			this.bids[5] = depthParquet.getBidPrice5();
+        //		}
+
+        if (depthParquet.getAskPrice0() != null) {
+            this.asks[0] = depthParquet.getAskPrice0();
+        }
+        if (depthParquet.getAskPrice1() != null) {
+            this.asks[1] = depthParquet.getAskPrice1();
+        }
+        if (depthParquet.getAskPrice2() != null) {
+            this.asks[2] = depthParquet.getAskPrice2();
+        }
+        if (depthParquet.getAskPrice3() != null) {
+            this.asks[3] = depthParquet.getAskPrice3();
+        }
+        if (depthParquet.getAskPrice4() != null) {
+            this.asks[4] = depthParquet.getAskPrice4();
+        }
+        //		if (depthParquet.getAskPrice5() != null) {
+        //			this.asks[5] = depthParquet.getAskPrice5();
+        //		}
+
+        if (depthParquet.getBidQuantity0() != null) {
+            this.bidsQuantities[0] = depthParquet.getBidQuantity0();
+        }
+        if (depthParquet.getBidQuantity1() != null) {
+            this.bidsQuantities[1] = depthParquet.getBidQuantity1();
+        }
+        if (depthParquet.getBidQuantity2() != null) {
+            this.bidsQuantities[2] = depthParquet.getBidQuantity2();
+        }
+        if (depthParquet.getBidQuantity3() != null) {
+            this.bidsQuantities[3] = depthParquet.getBidQuantity3();
+        }
+        if (depthParquet.getBidQuantity4() != null) {
+            this.bidsQuantities[4] = depthParquet.getBidQuantity4();
+        }
+        //		if (depthParquet.getBidQuantity5() != null) {
+        //			this.bidsQuantities[5] = depthParquet.getBidQuantity5();
+        //		}
+
+        if (depthParquet.getAskQuantity0() != null) {
+            this.asksQuantities[0] = depthParquet.getAskQuantity0();
+        }
+        if (depthParquet.getAskQuantity1() != null) {
+            this.asksQuantities[1] = depthParquet.getAskQuantity1();
+        }
+        if (depthParquet.getAskQuantity2() != null) {
+            this.asksQuantities[2] = depthParquet.getAskQuantity2();
+        }
+        if (depthParquet.getAskQuantity3() != null) {
+            this.asksQuantities[3] = depthParquet.getAskQuantity3();
+        }
+        if (depthParquet.getAskQuantity4() != null) {
+            this.asksQuantities[4] = depthParquet.getAskQuantity4();
+        }
+
+        this.setLevelsFromData();
+        //		if (depthParquet.getAskQuantity5() != null) {
+        //			this.asksQuantities[5] = depthParquet.getAskQuantity5();
+        //		}
+    }
+
 
     public void setAllQuantitiesZero() {
         //use only in metatrader info from backtesting
@@ -48,30 +239,54 @@ public class Depth extends CSVable implements Cloneable {
     }
 
 
-    private void cleanNullLevels() {
-        int maxLevelBid = 0;
-        int maxLevelAsk = 0;
+    public void cleanNullLevels() {
 
-        for (int level = 0; level < Depth.MAX_DEPTH; level++) {
-            if (bids[level] != null && bidsQuantities[level] != null) {
-                maxLevelBid++;
-            }
-
-            if (asks[level] != null && asksQuantities[level] != null) {
-                maxLevelAsk++;
+        List<Integer> bidLevelsToRemove = new ArrayList<>();
+        List<Integer> askLevelsToRemove = new ArrayList<>();
+        for (int level = 0; level < bids.length; level++) {
+            if (bidsQuantities.length > level && (Depth.isDefaultValue(bids[level]) || Depth.isDefaultValue(bidsQuantities[level]))) {
+                bidLevelsToRemove.add(level);
             }
         }
+        for (int level = 0; level < asks.length; level++) {
+            if (asksQuantities.length > level && (Depth.isDefaultValue(asks[level]) || Depth.isDefaultValue(asksQuantities[level]))) {
+                askLevelsToRemove.add(level);
+            }
+        }
+
+        // Process removals in reverse order to avoid shifting problems
+        Collections.sort(bidLevelsToRemove, Collections.reverseOrder());
+        Collections.sort(askLevelsToRemove, Collections.reverseOrder());
+
+        //shift from worst price to best
+        for (int levelToRemove : bidLevelsToRemove) {
+            bids = RemoveLevelAndShiftToLeft(bids, levelToRemove);
+            bidsQuantities = RemoveLevelAndShiftToLeft(bidsQuantities, levelToRemove);
+            if (bidsAlgorithmInfo != null) {
+                bidsAlgorithmInfo = (List<String>[]) ArrayUtils.RemoveLevelAndShiftToLeft(bidsAlgorithmInfo, levelToRemove);
+            }
+        }
+        for (int levelToRemove : askLevelsToRemove) {
+            asks = RemoveLevelAndShiftToLeft(asks, levelToRemove);
+            asksQuantities = RemoveLevelAndShiftToLeft(asksQuantities, levelToRemove);
+            if (asksAlgorithmInfo != null) {
+                asksAlgorithmInfo = (List<String>[]) ArrayUtils.RemoveLevelAndShiftToLeft(asksAlgorithmInfo, levelToRemove);
+            }
+        }
+        //now the worst places are with default value -> remove them
+        int maxLevelBid = bids.length - bidLevelsToRemove.size();
         bidsQuantities = Arrays.copyOf(bidsQuantities, maxLevelBid);
         bids = Arrays.copyOf(bids, maxLevelBid);
-
+        int maxLevelAsk = asks.length - askLevelsToRemove.size();
         asks = Arrays.copyOf(asks, maxLevelAsk);
         asksQuantities = Arrays.copyOf(asksQuantities, maxLevelAsk);
     }
 
+
     public void setLevelsFromData() {
         //		cleanNullLevels();
-        int bidLevels = Math.min(ArrayUtils.getNonNullLength(bids), Depth.MAX_DEPTH);
-        int askLevels = Math.min(ArrayUtils.getNonNullLength(asks), Depth.MAX_DEPTH);
+        int bidLevels = Math.min(getNonNullLength(bids), Depth.MAX_DEPTH);
+        int askLevels = Math.min(getNonNullLength(asks), Depth.MAX_DEPTH);
         this.bidLevels = bidLevels;
         this.askLevels = askLevels;
         this.levels = getLevels();
@@ -119,69 +334,6 @@ public class Depth extends CSVable implements Cloneable {
         return bids[0];
     }
 
-    public double getBidPriceLevel(int level, double qty) {
-        if (qty <= 1E-9 && level == 0) {
-            return getBestBid();
-        }
-        if (bids == null || bids.length == 0 || bidsQuantities == null || bidsQuantities.length == 0) {
-            return Double.MIN_VALUE;
-        }
-        double cumQty = 0;
-        int levelIt = 0;
-        for (int i = 0; i < bids.length; i++) {
-            cumQty += bidsQuantities[i];
-            if (cumQty >= qty) {
-                if (levelIt == level) {
-                    return bids[i];
-                }
-                levelIt++;
-            }
-        }
-        return Double.MIN_VALUE;
-    }
-
-    public double getAskPriceLevel(int level, double qty) {
-        if (qty <= 1E-9 && level == 0) {
-            return getBestAsk();
-        }
-
-        if (asks == null || asks.length == 0 || asksQuantities == null || asksQuantities.length == 0) {
-            return Double.MIN_VALUE;
-        }
-        double cumQty = 0;
-        int levelIt = 0;
-        for (int i = 0; i < asks.length; i++) {
-            cumQty += asksQuantities[i];
-            if (cumQty >= qty) {
-                if (levelIt == level) {
-                    return asks[i];
-                }
-                levelIt++;
-            }
-        }
-        return Double.MIN_VALUE;
-    }
-
-    public double getMidPriceLevel(int level, double qty) {
-        if (qty <= 1E-9 && level == 0) {
-            return getMidPrice();
-        }
-
-        double bestBid = getBidPriceLevel(level, qty);
-        double bestAsk = getAskPriceLevel(level, qty);
-        return (bestBid + bestAsk) / 2;
-    }
-
-    public double getSpreadLevel(int level, double qty) {
-        if (qty <= 1E-9 && level == 0) {
-            return getSpread();
-        }
-
-        double bestBid = getBidPriceLevel(level, qty);
-        double bestAsk = getAskPriceLevel(level, qty);
-        return bestAsk - bestBid;
-    }
-
 
     @JSONField(serialize = false, deserialize = false)
     public double getBestAsk() {
@@ -196,7 +348,7 @@ public class Depth extends CSVable implements Cloneable {
         double output = -1;
         int levelCounter = asks.length - 1;
         while (output == -1) {
-            if (asks[levelCounter] != null) {
+            if (!Depth.isDefaultValue(asks[levelCounter])) {
                 output = asks[levelCounter];
             } else {
                 levelCounter--;
@@ -210,7 +362,7 @@ public class Depth extends CSVable implements Cloneable {
         double output = -1;
         int levelCounter = bids.length - 1;
         while (output == -1) {
-            if (bids[levelCounter] != null) {
+            if (!Depth.isDefaultValue(bids[levelCounter])) {
                 output = bids[levelCounter];
             } else {
                 levelCounter--;
@@ -237,11 +389,11 @@ public class Depth extends CSVable implements Cloneable {
     }
 
     public boolean equalsSide(Depth depth, Verb verb) {
-        Double[] prices = bids;
-        Double[] quantities = bidsQuantities;
+        double[] prices = bids;
+        double[] quantities = bidsQuantities;
 
-        Double[] otherPrices = depth.getBids();
-        Double[] otherQuantities = depth.getBidsQuantities();
+        double[] otherPrices = depth.getBids();
+        double[] otherQuantities = depth.getBidsQuantities();
 
         if (verb.equals(Verb.Sell)) {
             prices = asks;
@@ -254,10 +406,11 @@ public class Depth extends CSVable implements Cloneable {
         return Arrays.equals(prices, otherPrices) && Arrays.equals(quantities, otherQuantities);
     }
 
+
     public boolean removeOrder(double price, double quantity, Verb verb, String algorithmInfo) {
         try {
-            Double[] prices = bids;
-            Double[] quantities = bidsQuantities;
+            double[] prices = bids;
+            double[] quantities = bidsQuantities;
             List<String>[] algorithmInfos = bidsAlgorithmInfo;
 
             if (verb.equals(Verb.Sell)) {
@@ -296,8 +449,9 @@ public class Depth extends CSVable implements Cloneable {
             }
             if (levelsToRemove.size() > 0) {
                 for (int level : levelsToRemove) {
-                    prices = (Double[]) RemoveLevelAndShiftToLeft(prices, level);
-                    algorithmInfos = (List<String>[]) RemoveLevelAndShiftToLeft(algorithmInfos, level);
+                    prices = RemoveLevelAndShiftToLeft(prices, level);
+                    quantities = RemoveLevelAndShiftToLeft(quantities, level);
+                    algorithmInfos = (List<String>[]) ArrayUtils.RemoveLevelAndShiftToLeft(algorithmInfos, level);
                 }
             }
             setLevelsFromData();
@@ -311,6 +465,9 @@ public class Depth extends CSVable implements Cloneable {
 
     @Override
     public String toString() {
+        if (bids == null || asks == null) {
+            return "Depth is empty";
+        }
         return toJsonString(this);
     }
 
@@ -406,7 +563,7 @@ public class Depth extends CSVable implements Cloneable {
 
         //ask side
         for (int level = 0; level < MAX_DEPTH_CSV; level++) {
-            if (level >= asks.length || asks[level] == null) {
+            if (level >= asks.length || Depth.isDefaultValue(asks[level])) {
                 stringBuffer.append("");
             } else {
                 stringBuffer.append(asks[level]);
@@ -414,7 +571,7 @@ public class Depth extends CSVable implements Cloneable {
             stringBuffer.append(',');
         }
         for (int level = 0; level < MAX_DEPTH_CSV; level++) {
-            if (level >= asksQuantities.length || asksQuantities[level] == null) {
+            if (level >= asksQuantities.length || Depth.isDefaultValue(asksQuantities[level])) {
                 stringBuffer.append("");
             } else {
                 stringBuffer.append(asksQuantities[level]);
@@ -424,7 +581,7 @@ public class Depth extends CSVable implements Cloneable {
 
         //bid side
         for (int level = 0; level < MAX_DEPTH_CSV; level++) {
-            if (level >= bids.length || bids[level] == null) {
+            if (level >= bids.length || Depth.isDefaultValue(bids[level])) {
                 stringBuffer.append("");
             } else {
                 stringBuffer.append(bids[level]);
@@ -432,7 +589,7 @@ public class Depth extends CSVable implements Cloneable {
             stringBuffer.append(',');
         }
         for (int level = 0; level < MAX_DEPTH_CSV; level++) {
-            if (level >= bidsQuantities.length || bidsQuantities[level] == null) {
+            if (level >= bidsQuantities.length || Depth.isDefaultValue(bidsQuantities[level])) {
                 stringBuffer.append("");
             } else {
                 stringBuffer.append(bidsQuantities[level]);
@@ -457,101 +614,6 @@ public class Depth extends CSVable implements Cloneable {
         return new DepthParquet(this);
     }
 
-    public Depth() {
-    }
-
-    public Depth(DepthParquet depthParquet, Instrument instrument) {
-        UTC_CALENDAR.setTimeInMillis(depthParquet.getTimestamp());
-        this.instrument = instrument.getPrimaryKey();
-        this.timestamp = depthParquet.getTimestamp();
-
-        //from csv
-        if (levels == 0) {
-            levels = MAX_DEPTH_CSV;
-        }
-        this.bidsQuantities = new Double[levels];
-        this.asksQuantities = new Double[levels];
-        this.bids = new Double[levels];
-        this.asks = new Double[levels];
-
-        if (depthParquet.getBidPrice0() != null) {
-            this.bids[0] = depthParquet.getBidPrice0();
-        }
-        if (depthParquet.getBidPrice1() != null) {
-            this.bids[1] = depthParquet.getBidPrice1();
-        }
-        if (depthParquet.getBidPrice2() != null) {
-            this.bids[2] = depthParquet.getBidPrice2();
-        }
-        if (depthParquet.getBidPrice3() != null) {
-            this.bids[3] = depthParquet.getBidPrice3();
-        }
-        if (depthParquet.getBidPrice4() != null) {
-            this.bids[4] = depthParquet.getBidPrice4();
-        }
-        //		if (depthParquet.getBidPrice5() != null) {
-        //			this.bids[5] = depthParquet.getBidPrice5();
-        //		}
-
-        if (depthParquet.getAskPrice0() != null) {
-            this.asks[0] = depthParquet.getAskPrice0();
-        }
-        if (depthParquet.getAskPrice1() != null) {
-            this.asks[1] = depthParquet.getAskPrice1();
-        }
-        if (depthParquet.getAskPrice2() != null) {
-            this.asks[2] = depthParquet.getAskPrice2();
-        }
-        if (depthParquet.getAskPrice3() != null) {
-            this.asks[3] = depthParquet.getAskPrice3();
-        }
-        if (depthParquet.getAskPrice4() != null) {
-            this.asks[4] = depthParquet.getAskPrice4();
-        }
-        //		if (depthParquet.getAskPrice5() != null) {
-        //			this.asks[5] = depthParquet.getAskPrice5();
-        //		}
-
-        if (depthParquet.getBidQuantity0() != null) {
-            this.bidsQuantities[0] = depthParquet.getBidQuantity0();
-        }
-        if (depthParquet.getBidQuantity1() != null) {
-            this.bidsQuantities[1] = depthParquet.getBidQuantity1();
-        }
-        if (depthParquet.getBidQuantity2() != null) {
-            this.bidsQuantities[2] = depthParquet.getBidQuantity2();
-        }
-        if (depthParquet.getBidQuantity3() != null) {
-            this.bidsQuantities[3] = depthParquet.getBidQuantity3();
-        }
-        if (depthParquet.getBidQuantity4() != null) {
-            this.bidsQuantities[4] = depthParquet.getBidQuantity4();
-        }
-        //		if (depthParquet.getBidQuantity5() != null) {
-        //			this.bidsQuantities[5] = depthParquet.getBidQuantity5();
-        //		}
-
-        if (depthParquet.getAskQuantity0() != null) {
-            this.asksQuantities[0] = depthParquet.getAskQuantity0();
-        }
-        if (depthParquet.getAskQuantity1() != null) {
-            this.asksQuantities[1] = depthParquet.getAskQuantity1();
-        }
-        if (depthParquet.getAskQuantity2() != null) {
-            this.asksQuantities[2] = depthParquet.getAskQuantity2();
-        }
-        if (depthParquet.getAskQuantity3() != null) {
-            this.asksQuantities[3] = depthParquet.getAskQuantity3();
-        }
-        if (depthParquet.getAskQuantity4() != null) {
-            this.asksQuantities[4] = depthParquet.getAskQuantity4();
-        }
-
-        this.setLevelsFromData();
-        //		if (depthParquet.getAskQuantity5() != null) {
-        //			this.asksQuantities[5] = depthParquet.getAskQuantity5();
-        //		}
-    }
 
     @JSONField(serialize = false, deserialize = false)
     public double getVPIN() {
@@ -634,12 +696,12 @@ public class Depth extends CSVable implements Cloneable {
     }
 
     @JSONField(serialize = false, deserialize = false)
-    public int getLevelBidPrice(double price) {
+    public int getLevelBidFromPrice(double price) {
         int lastLevel = getBidLevels();
         if (bids != null) {
             for (int level = 0; level < lastLevel; level++) {
                 try {
-                    if (bids[level] != null && bids[level] <= price) {
+                    if (!Depth.isDefaultValue(bids[level]) && bids[level] <= price) {
                         return level;
                     }
                 } catch (IndexOutOfBoundsException e) {
@@ -651,12 +713,76 @@ public class Depth extends CSVable implements Cloneable {
     }
 
     @JSONField(serialize = false, deserialize = false)
-    public int getLevelAskPrice(double price) {
+    public double getBidPriceFromLevel(int level) {
+        return getBidPriceFromLevel(level, 0);
+    }
+
+    @JSONField(serialize = false, deserialize = false)
+    public double getBidPriceFromLevel(int level, double qty) {
+        if (qty <= 1E-9 && level == 0) {
+            return getBestBid();
+        }
+        if (bids == null || bids.length == 0 || bidsQuantities == null || bidsQuantities.length == 0 || level >= bids.length) {
+            return Double.MIN_VALUE;
+        }
+
+        if (qty <= 1E-9) {
+            return bids[level];
+        }
+
+        double cumQty = 0;
+        int levelIt = 0;
+        for (int i = 0; i < bidLevels; i++) {
+            cumQty += bidsQuantities[i];
+            if (cumQty >= qty) {
+                if (levelIt == level) {
+                    return bids[i];
+                }
+                levelIt++;
+            }
+        }
+        return Double.MIN_VALUE;
+    }
+
+    @JSONField(serialize = false, deserialize = false)
+    public double getAskPriceFromLevel(int level) {
+        return getAskPriceFromLevel(level, 0);
+    }
+
+    @JSONField(serialize = false, deserialize = false)
+    public double getAskPriceFromLevel(int level, double qty) {
+        if (qty <= 1E-9 && level == 0) {
+            return getBestAsk();
+        }
+
+        if (asks == null || asks.length == 0 || asksQuantities == null || asksQuantities.length == 0 || level >= asks.length) {
+            return Double.MAX_VALUE;
+        }
+        if (qty <= 1E-9) {
+            return asks[level];
+        }
+
+        double cumQty = 0;
+        int levelIt = 0;
+        for (int i = 0; i < askLevels; i++) {
+            cumQty += asksQuantities[i];
+            if (cumQty >= qty) {
+                if (levelIt == level) {
+                    return asks[i];
+                }
+                levelIt++;
+            }
+        }
+        return Double.MAX_VALUE;
+    }
+
+    @JSONField(serialize = false, deserialize = false)
+    public int getLevelAskFromPrice(double price) {
         int lastLevel = getAskLevels();
         if (asks != null) {
             for (int level = 0; level < lastLevel; level++) {
                 try {
-                    if (asks[level] != null && asks[level] >= price) {
+                    if (!Depth.isDefaultValue(asks[level]) && asks[level] >= price) {
                         return level;
                     }
                 } catch (IndexOutOfBoundsException e) {
@@ -666,6 +792,41 @@ public class Depth extends CSVable implements Cloneable {
         }
         return lastLevel;
     }
+
+    @JSONField(serialize = false, deserialize = false)
+    public double getMidPriceFromLevel(int level, double qty) {
+        if (qty <= 1E-9 && level == 0) {
+            return getMidPrice();
+        }
+
+        double bestBid = getBidPriceFromLevel(level, qty);
+        if (bestBid == Double.MIN_VALUE) {
+            return Double.NaN;
+        }
+        double bestAsk = getAskPriceFromLevel(level, qty);
+        if (bestAsk == Double.MAX_VALUE) {
+            return Double.NaN;
+        }
+        return (bestBid + bestAsk) / 2;
+    }
+
+    @JSONField(serialize = false, deserialize = false)
+    public double getSpreadFromLevel(int level, double qty) {
+        if (qty <= 1E-9 && level == 0) {
+            return getSpread();
+        }
+
+        double bestBid = getBidPriceFromLevel(level, qty);
+        if (bestBid == Double.MIN_VALUE) {
+            return Double.NaN;
+        }
+        double bestAsk = getAskPriceFromLevel(level, qty);
+        if (bestAsk == Double.MAX_VALUE) {
+            return Double.NaN;
+        }
+        return bestAsk - bestBid;
+    }
+
 
     @JSONField(serialize = false, deserialize = false)
     public double getBidVolume(double price) {
@@ -723,9 +884,61 @@ public class Depth extends CSVable implements Cloneable {
         return askVolTotal;
     }
 
+    @JSONField(serialize = false, deserialize = false)
+    public boolean equalsContent(Depth otherDepth) {
+        //check if the arrays are equal bids and asks and quantities
+        if (otherDepth == null) {
+            return false;
+        }
+        if (otherDepth.getBids() == null || otherDepth.getAsks() == null || otherDepth.getBidsQuantities() == null || otherDepth.getAsksQuantities() == null) {
+            return false;
+        }
+        if (this.getBids() == null || this.getAsks() == null || this.getBidsQuantities() == null || this.getAsksQuantities() == null) {
+            return false;
+        }
+        if (this.getBids().length != otherDepth.getBids().length || this.getAsks().length != otherDepth.getAsks().length || this.getBidsQuantities().length != otherDepth.getBidsQuantities().length || this.getAsksQuantities().length != otherDepth.getAsksQuantities().length) {
+            return false;
+        }
+        //check levels
+        if (this.getLevels() != otherDepth.getLevels()) {
+            return false;
+        }
+        if (this.getBidLevels() != otherDepth.getBidLevels()) {
+            return false;
+        }
+        if (this.getAskLevels() != otherDepth.getAskLevels()) {
+            return false;
+        }
+        //check array contents
+        if (!Arrays.equals(this.getBids(), otherDepth.getBids())) {
+            return false;
+        }
+        if (!Arrays.equals(this.getAsks(), otherDepth.getAsks())) {
+            return false;
+        }
+        if (!Arrays.equals(this.getBidsQuantities(), otherDepth.getBidsQuantities())) {
+            return false;
+        }
+        if (!Arrays.equals(this.getAsksQuantities(), otherDepth.getAsksQuantities())) {
+            return false;
+        }
+
+        return true;
+
+    }
+
     @Override
     public Object clone() throws CloneNotSupportedException {
         return super.clone();
     }
+
+    public static class DepthPool extends ObjectPool<Depth> {
+        @Override
+        protected Depth create() {
+            return new Depth();
+        }
+    }
 }
+
+
 

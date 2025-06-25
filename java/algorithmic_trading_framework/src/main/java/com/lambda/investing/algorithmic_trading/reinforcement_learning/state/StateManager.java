@@ -2,8 +2,9 @@ package com.lambda.investing.algorithmic_trading.reinforcement_learning.state;
 
 import com.lambda.investing.algorithmic_trading.Algorithm;
 import com.lambda.investing.algorithmic_trading.AlgorithmObserver;
-import com.lambda.investing.algorithmic_trading.candle_manager.CandleListener;
 import com.lambda.investing.algorithmic_trading.PnlSnapshot;
+import com.lambda.investing.algorithmic_trading.PortfolioSnapshot;
+import com.lambda.investing.algorithmic_trading.candle_manager.CandleListener;
 import com.lambda.investing.model.candle.Candle;
 import com.lambda.investing.model.market_data.Depth;
 import com.lambda.investing.model.market_data.Trade;
@@ -28,6 +29,7 @@ public class StateManager implements AlgorithmObserver, CandleListener, Runnable
     Thread pnlSnapshotForceUpdate;
     boolean lastIsReady = false;
     PnlSnapshot lasPnlSnapshotSend = null;
+    PortfolioSnapshot lastPortfolioSnapshotSend = null;
     Long currentTimestamp;
 
     private boolean threadAutoFillPnlSnapshot = true;
@@ -71,6 +73,7 @@ public class StateManager implements AlgorithmObserver, CandleListener, Runnable
         lastIsReady = false;
         currentTimestamp = 0L;
         lasPnlSnapshotSend = null;
+        lastPortfolioSnapshotSend = null;
         abstractState.reset();
 
         if (!threadAutoFillPnlSnapshot) {
@@ -82,9 +85,13 @@ public class StateManager implements AlgorithmObserver, CandleListener, Runnable
 
     @Override
     public void onUpdatePnlSnapshot(String algorithmInfo, PnlSnapshot pnlSnapshot) {
-        abstractState.updatePrivateState(pnlSnapshot);
         lasPnlSnapshotSend = pnlSnapshot;
+    }
 
+    @Override
+    public void onUpdatePortfolioSnapshot(String algorithmInfo, PortfolioSnapshot portfolioSnapshot) {
+        abstractState.updatePrivateState(portfolioSnapshot);
+        lastPortfolioSnapshotSend = portfolioSnapshot;
     }
 
     public void onCandleUpdate(Candle candle) {
@@ -130,6 +137,9 @@ public class StateManager implements AlgorithmObserver, CandleListener, Runnable
                     //force update
                     lasPnlSnapshotSend.setLastTimestampUpdate(this.algorithm.getCurrentTimestamp());
                     onUpdatePnlSnapshot(algorithm.getAlgorithmInfo(), lasPnlSnapshotSend);
+
+                    lastPortfolioSnapshotSend.setLastTimestampUpdate(this.algorithm.getCurrentTimestamp());
+                    onUpdatePortfolioSnapshot(algorithm.getAlgorithmInfo(), lastPortfolioSnapshotSend);
                 }
 
             }

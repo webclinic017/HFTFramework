@@ -1,5 +1,6 @@
 package com.lambda.investing.algorithmic_trading;
 
+import com.lambda.investing.Configuration;
 import com.lambda.investing.model.asset.Instrument;
 import com.lambda.investing.model.market_data.Depth;
 import com.lambda.investing.model.market_data.Trade;
@@ -8,6 +9,7 @@ import com.lambda.investing.model.trading.OrderRequest;
 import com.lambda.investing.model.trading.Verb;
 import lombok.Getter;
 import lombok.Setter;
+import net.openhft.affinity.AffinityLock;
 import org.apache.curator.shaded.com.google.common.collect.EvictingQueue;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -37,7 +39,8 @@ public class InstrumentManager {
     public InstrumentManager(Instrument instrument, boolean isBacktest) {
         this.instrument = instrument;
         if (!isBacktest) {
-            new Thread(new MapManager(), instrument.getPrimaryKey() + "_instrumentManager").start();
+//            new Thread(new MapManager(), instrument.getPrimaryKey() + "_instrumentManager").start();
+            new Thread(new MapManager()::runAffinity, instrument.getPrimaryKey() + "_instrumentManager").start();
         }
 
         reset();
@@ -68,6 +71,20 @@ public class InstrumentManager {
     private class MapManager implements Runnable {
 
         private boolean enable = true;
+
+        public void runAffinity() {
+            try (AffinityLock al = AffinityLock.acquireLock(Configuration.GET_AFFINITY_CPUS())) {
+                run();
+            } catch (Configuration.LambdaConfigurationException e) {
+                run();
+            } catch (Exception e) {
+                logger.warn("error AffinityLock ", e);
+                if (Configuration.IS_LINUX) {
+                    System.err.println("error AffinityLock  -> " + e.toString());
+                }
+                run();
+            }
+        }
 
         @Override
         public void run() {

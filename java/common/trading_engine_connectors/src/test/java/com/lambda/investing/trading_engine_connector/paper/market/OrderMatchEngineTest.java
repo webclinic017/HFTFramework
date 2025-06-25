@@ -1,5 +1,6 @@
 package com.lambda.investing.trading_engine_connector.paper.market;
 
+import com.lambda.investing.Configuration;
 import com.lambda.investing.model.market_data.Depth;
 import com.lambda.investing.model.market_data.Trade;
 import com.lambda.investing.model.trading.*;
@@ -37,8 +38,10 @@ import static org.mockito.Mockito.doAnswer;
 	private String algoId = "junitAlgo";
 
 	@Before public void setUp() throws Exception {
-		OrderMatchEngine.REFRESH_DEPTH_ORDER_REQUEST = true;
-		OrderMatchEngine.REFRESH_DEPTH_ORDER_REQUEST = true;
+		Configuration.BACKTEST_REFRESH_DEPTH_ORDER_REQUEST = true;
+		Configuration.BACKTEST_REFRESH_DEPTH_TRADES = true;
+		Configuration.REFRESH_DEPTH_ORDER_REQUEST_MS = 0;
+
 		lastExecutionReportListenList = new ArrayList<>();
 		Orderbook orderbook = new Orderbook(0.00001);
 		paperTradingEngine = Mockito.mock(PaperTradingEngine.class);
@@ -97,20 +100,20 @@ import static org.mockito.Mockito.doAnswer;
 	}
 
 	private Depth createDepth(double bestBid, double bestAsk, double bestBidQty, double bestAskQty) {
-		Depth depth = new Depth();
+		Depth depth = Depth.getInstance();
 		depth.setTimestamp(System.currentTimeMillis());
 		depth.setInstrument(instrumentPk);
 		depth.setLevels(1);
-		Double[] asks = new Double[] { bestAsk, bestAsk + 0.01 };
+		double[] asks = new double[]{bestAsk, bestAsk + 0.01};
 		depth.setAsks(asks);
 
-		Double[] bids = new Double[] { bestBid, bestBid - 0.01 };
+		double[] bids = new double[]{bestBid, bestBid - 0.01};
 		depth.setBids(bids);
 
-		Double[] asksQ = new Double[]{bestAskQty, bestAskQty};
+		double[] asksQ = new double[]{bestAskQty, bestAskQty};
 		depth.setAsksQuantities(asksQ);
 
-		Double[] bidsQ = new Double[]{bestBidQty, bestBidQty};
+		double[] bidsQ = new double[]{bestBidQty, bestBidQty};
 		depth.setBidsQuantities(bidsQ);
 
 
@@ -125,7 +128,7 @@ import static org.mockito.Mockito.doAnswer;
 	}
 
 	private Trade createTrade(double price, double quantity, Verb verb) {
-		Trade trade = new Trade();
+		Trade trade = Trade.getInstance();
 		trade.setTimestamp(System.currentTimeMillis());
 		trade.setInstrument(instrumentPk);
 		trade.setPrice(price);
@@ -211,7 +214,8 @@ import static org.mockito.Mockito.doAnswer;
 
 	}
 
-	@Test public void refreshAlgoAndFilledWithTradeSameSide2() {
+	@Test
+	public void refreshAlgoAndFilledWithTradeThatNotFillAnything() {
 		lastDepthListen = null;
 		Depth depth = createDepth(85, 95, 5, 6);
 		orderMatchEngine.refreshMarketMakerDepth(depth);
@@ -235,7 +239,8 @@ import static org.mockito.Mockito.doAnswer;
 
 	}
 
-	@Test public void refreshAlgoMidPriceAndFilledWithTrade() {
+	@Test
+	public void refreshAlgoMidPriceAndFilledWithTradeSell() {
 		lastDepthListen = null;
 		Depth depth = createDepth(85, 95, 5, 6);
 		orderMatchEngine.refreshMarketMakerDepth(depth);
@@ -246,7 +251,12 @@ import static org.mockito.Mockito.doAnswer;
 		orderMatchEngine.orderRequest(orderRequest);
 		Assert.assertEquals(ExecutionReportStatus.Active, lastExecutionReportListen.getExecutionReportStatus());
 		Assert.assertEquals(90, lastExecutionReportListen.getPrice(), 0.001);
+		//order is the best bid now
+		Assert.assertEquals(orderRequest.getPrice(), lastDepthListen.getBestBid(), 0.001);
+		Assert.assertEquals(orderRequest.getQuantity(), lastDepthListen.getBestBidQty(), 0.001);
+		Assert.assertEquals(3, lastDepthListen.getBidLevels(), 0.001);
 
+		//this trade is not crossing
 		lastExecutionReportListen = null;
 		lastDepthListen = null;
 		lastTradeListen = null;
@@ -257,7 +267,10 @@ import static org.mockito.Mockito.doAnswer;
 		Assert.assertNull(lastExecutionReportListen);
 		Assert.assertNull(lastDepthListen);
 
+		//this trade crossing with the order at 90
 		lastTradeListen = null;
+		lastDepthListen = null;
+		lastExecutionReportListen = null;
 		trade = createTrade(90.0, 1.0, Verb.Sell);
 		orderMatchEngine.refreshFillMarketTrade(trade);
 		Assert.assertEquals(trade.getPrice(), lastTradeListen.getPrice(), 0.0001);
@@ -269,7 +282,10 @@ import static org.mockito.Mockito.doAnswer;
 				lastDepthListen.getBestBidQty(), 0.0001);
 		Assert.assertEquals(lastTradeListen.getPrice(), lastExecutionReportListen.getPrice(), 0.0001);
 
+		//this trade crossing with the order at 90
 		lastTradeListen = null;
+		lastDepthListen = null;
+		lastExecutionReportListen = null;
 		trade = createTrade(89.0, 1.0, Verb.Sell);//orderRequestPrice will remain
 		orderMatchEngine.refreshFillMarketTrade(trade);
 		Assert.assertEquals(orderRequest.getPrice(), lastTradeListen.getPrice(), 0.0001);
@@ -281,7 +297,10 @@ import static org.mockito.Mockito.doAnswer;
 				lastDepthListen.getBestBidQty(), 0.0001);
 		Assert.assertEquals(lastTradeListen.getPrice(), lastExecutionReportListen.getPrice(), 0.0001);
 
+		//this trade crossing with the order at 90
 		lastTradeListen = null;
+		lastDepthListen = null;
+		lastExecutionReportListen = null;
 		trade = createTrade(88.0, 1.0, Verb.Sell);//we are going to fill the rest
 		orderMatchEngine.refreshFillMarketTrade(trade);
 		Assert.assertEquals(orderRequest.getPrice(), lastTradeListen.getPrice(), 0.0001);
@@ -312,8 +331,84 @@ import static org.mockito.Mockito.doAnswer;
 		Assert.assertNull(lastDepthListen);
 		Assert.assertNull(lastExecutionReportListen);
 		Assert.assertNotNull(lastTradeListen);
-		Assert.assertEquals(trade.getPrice(), lastTradeListen.getPrice());
-		Assert.assertEquals(trade.getQuantity(), lastTradeListen.getQuantity());
+		Assert.assertEquals(trade.getPrice(), lastTradeListen.getPrice(), 0.001);
+		Assert.assertEquals(trade.getQuantity(), lastTradeListen.getQuantity(), 0.001);
+	}
+
+	@Test
+	public void refreshAlgoMidPriceAndFilledWithTradeBuy() {
+		lastDepthListen = null;
+		Depth depth = createDepth(85, 95, 5, 6);
+		orderMatchEngine.refreshMarketMakerDepth(depth);
+		Assert.assertEquals(depth.getBestBid(), lastDepthListen.getBestBid(), 0.0001);
+		Assert.assertEquals(depth.getBestAsk(), lastDepthListen.getBestAsk(), 0.0001);
+
+		OrderRequest orderRequest = createOrderRequest(90, 3, Verb.Sell);
+		orderMatchEngine.orderRequest(orderRequest);
+		Assert.assertEquals(ExecutionReportStatus.Active, lastExecutionReportListen.getExecutionReportStatus());
+		Assert.assertEquals(90, lastExecutionReportListen.getPrice(), 0.001);
+		//order is the best bid now
+		Assert.assertEquals(orderRequest.getPrice(), lastDepthListen.getBestAsk(), 0.001);
+		Assert.assertEquals(orderRequest.getQuantity(), lastDepthListen.getBestAskQty(), 0.001);
+		Assert.assertEquals(3, lastDepthListen.getAskLevels(), 0.001);
+
+		//this trade is not crossing
+		lastExecutionReportListen = null;
+		lastDepthListen = null;
+		lastTradeListen = null;
+		Trade trade = createTrade(89.0, 1.0, Verb.Buy);
+		orderMatchEngine.refreshFillMarketTrade(trade);
+		Assert.assertEquals(trade.getPrice(), lastTradeListen.getPrice(), 0.0001);
+		Assert.assertEquals(trade.getQuantity(), lastTradeListen.getQuantity(), 0.0001);
+		Assert.assertNull(lastExecutionReportListen);
+		Assert.assertNull(lastDepthListen);
+
+		//this trade crossing with the order at 90
+		lastTradeListen = null;
+		lastDepthListen = null;
+		lastExecutionReportListen = null;
+		trade = createTrade(90.0, 1.0, Verb.Buy);
+		orderMatchEngine.refreshFillMarketTrade(trade);
+		Assert.assertEquals(trade.getPrice(), lastTradeListen.getPrice(), 0.0001);
+		Assert.assertEquals(trade.getQuantity(), lastTradeListen.getQuantity(), 0.0001);
+		Assert.assertNotNull(lastExecutionReportListen);
+		Assert.assertEquals(ExecutionReportStatus.PartialFilled, lastExecutionReportListen.getExecutionReportStatus());
+		Assert.assertNotNull(lastDepthListen);
+		Assert.assertEquals(lastExecutionReportListen.getQuantity() - lastExecutionReportListen.getQuantityFill(),
+				lastDepthListen.getBestAskQty(), 0.0001);
+		Assert.assertEquals(lastTradeListen.getPrice(), lastExecutionReportListen.getPrice(), 0.0001);
+
+		//this trade crossing with the order at 90
+		lastTradeListen = null;
+		lastDepthListen = null;
+		lastExecutionReportListen = null;
+		trade = createTrade(91.0, 1.0, Verb.Buy);//orderRequestPrice will remain
+		orderMatchEngine.refreshFillMarketTrade(trade);
+		Assert.assertEquals(orderRequest.getPrice(), lastTradeListen.getPrice(), 0.0001);
+		Assert.assertEquals(trade.getQuantity(), lastTradeListen.getQuantity(), 0.0001);
+		Assert.assertNotNull(lastExecutionReportListen);
+		Assert.assertEquals(ExecutionReportStatus.PartialFilled, lastExecutionReportListen.getExecutionReportStatus());
+		Assert.assertNotNull(lastDepthListen);
+		Assert.assertEquals(lastExecutionReportListen.getQuantity() - lastExecutionReportListen.getQuantityFill(),
+				lastDepthListen.getBestAskQty(), 0.0001);
+		Assert.assertEquals(lastTradeListen.getPrice(), lastExecutionReportListen.getPrice(), 0.0001);
+
+		//this trade crossing with the order at 90
+		lastTradeListen = null;
+		lastDepthListen = null;
+		lastExecutionReportListen = null;
+		trade = createTrade(92.0, 1.0, Verb.Buy);//we are going to fill the rest
+		orderMatchEngine.refreshFillMarketTrade(trade);
+		Assert.assertEquals(orderRequest.getPrice(), lastTradeListen.getPrice(), 0.0001);
+		Assert.assertEquals(trade.getQuantity(), lastTradeListen.getQuantity(), 0.0001);
+		Assert.assertNotNull(lastExecutionReportListen);
+		Assert.assertEquals(ExecutionReportStatus.CompletellyFilled,
+				lastExecutionReportListen.getExecutionReportStatus());
+		Assert.assertNotNull(lastDepthListen);
+		Assert.assertEquals(0.0, lastExecutionReportListen.getQuantity() - lastExecutionReportListen.getQuantityFill(),
+				0.0001);
+		Assert.assertEquals(orderRequest.getPrice(), lastExecutionReportListen.getPrice(), 0.0001);
+
 	}
 
 	@Test

@@ -1,7 +1,8 @@
 package com.lambda.investing.trading_engine_connector.ordinary;
 
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
+
 import com.lambda.investing.Configuration;
+import com.lambda.investing.LambdaThreadFactory;
 import com.lambda.investing.connector.ConnectorConfiguration;
 import com.lambda.investing.connector.ConnectorListener;
 import com.lambda.investing.connector.ConnectorProvider;
@@ -13,6 +14,9 @@ import com.lambda.investing.model.trading.OrderRequest;
 import com.lambda.investing.trading_engine_connector.ExecutionReportListener;
 import com.lambda.investing.trading_engine_connector.TradingEngineConnector;
 import com.lambda.investing.trading_engine_connector.paper.PaperTradingEngine;
+
+
+import static net.openhft.affinity.AffinityStrategies.*;
 
 import java.util.Map;
 import java.util.concurrent.*;
@@ -34,11 +38,9 @@ public class OrdinaryTradingEngine implements TradingEngineConnector, ConnectorL
 
     private int threadsSendOrderRequest, threadsListeningExecutionReports;
 
-    ThreadFactory namedThreadFactoryOrderRequest = new ThreadFactoryBuilder()
-            .setNameFormat("OrdinaryTradingEngine-OrderRequest-%d").build();
+    ThreadFactory namedThreadFactoryOrderRequest = LambdaThreadFactory.createThreadFactory("OrdinaryTradingEngine-OrderRequest");
 
-    ThreadFactory namedThreadFactoryExecutionReport = new ThreadFactoryBuilder()
-            .setNameFormat("OrdinaryTradingEngine-ExecutionReport-%d").build();
+    ThreadFactory namedThreadFactoryExecutionReport = LambdaThreadFactory.createThreadFactory("OrdinaryTradingEngine-ExecutionReport");
 
     ThreadPoolExecutor senderPool, receiverPool;
 
@@ -49,16 +51,6 @@ public class OrdinaryTradingEngine implements TradingEngineConnector, ConnectorL
         this.executionReportOrderRequestConnectorProvider = executionReportOrderRequestConnectorProvider;
         this.paperTradingEngineConnector = paperTradingEngineConnector;
         listenersManager = new ConcurrentHashMap<>();
-
-        ThreadFactoryBuilder threadFactoryBuilder1 = new ThreadFactoryBuilder();
-        threadFactoryBuilder1.setNameFormat("OrdinaryTradingEngine-OrderRequest-%d");
-        threadFactoryBuilder1.setPriority(priorityOrderRequest);
-        ThreadFactory namedThreadFactoryOrderRequest = threadFactoryBuilder1.build();
-
-        ThreadFactoryBuilder threadFactoryBuilder2 = new ThreadFactoryBuilder();
-        threadFactoryBuilder2.setNameFormat("OrdinaryTradingEngine-ExecutionReport-%d");
-        threadFactoryBuilder2.setPriority(priorityExecutionReport);
-        ThreadFactory namedThreadFactoryExecutionReport = threadFactoryBuilder1.build();
 
         this.threadsSendOrderRequest = threadsSendOrderRequest;
         initSenderPool();

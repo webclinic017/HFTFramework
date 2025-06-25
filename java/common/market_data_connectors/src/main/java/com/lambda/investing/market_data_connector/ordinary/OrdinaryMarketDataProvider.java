@@ -39,12 +39,14 @@ import static com.lambda.investing.model.Util.fromJsonString;
 			TypeMessage typeMessage, String content) {
 
 		if (typeMessage.equals(TypeMessage.depth)) {
-			Depth depth = fromJsonString(content, Depth.class);
+			Depth depth = Depth.copyFrom(fromJsonString(content, Depth.class));//new copy from pool
 			depth.setLevelsFromData();
 			notifyDepth(depth);
+			depth.delete();//delete from pool
 		} else if (typeMessage.equals(TypeMessage.trade)) {
-			Trade trade = fromJsonString(content, Trade.class);
+			Trade trade = Trade.copyFrom(fromJsonString(content, Trade.class));
 			notifyTrade(trade);
+			trade.delete();
 		} else if (typeMessage.equals(TypeMessage.command)) {
 			Command command = fromJsonString(content, Command.class);
 			notifyCommand(command);

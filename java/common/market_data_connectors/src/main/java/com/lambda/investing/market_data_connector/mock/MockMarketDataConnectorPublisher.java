@@ -6,13 +6,11 @@ import com.lambda.investing.connector.zero_mq.ZeroMqConfiguration;
 import com.lambda.investing.market_data_connector.*;
 import com.lambda.investing.model.market_data.Depth;
 import com.lambda.investing.model.market_data.Trade;
-import com.lambda.investing.model.messaging.TypeMessage;
 import com.lambda.investing.model.trading.Verb;
 import org.apache.commons.math3.util.Precision;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.text.DecimalFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -66,17 +64,17 @@ public class MockMarketDataConnectorPublisher extends AbstractMarketDataConnecto
 
 
 	private Depth createDepth(MockMarketDataConfiguration mockMarketDataConfiguration) {
-		Depth depth = new Depth();
+		Depth depth = Depth.getInstancePool();
 		depth.setInstrument(mockMarketDataConfiguration.getInstrument().getPrimaryKey());
 		depth.setLevels(mockMarketDataConfiguration.getLevels());
 
 		double midPrice = mockMarketDataConfiguration.getStartMidPrice();
 		double midQuantity = mockMarketDataConfiguration.getStartMidQuantity();
 
-		Double[] askPrice = new Double[mockMarketDataConfiguration.getLevels()];
-		Double[] bidPrice = new Double[mockMarketDataConfiguration.getLevels()];
-		Double[] askQuantity = new Double[mockMarketDataConfiguration.getLevels()];
-		Double[] bidQuantity = new Double[mockMarketDataConfiguration.getLevels()];
+        double[] askPrice = new double[mockMarketDataConfiguration.getLevels()];
+        double[] bidPrice = new double[mockMarketDataConfiguration.getLevels()];
+        double[] askQuantity = new double[mockMarketDataConfiguration.getLevels()];
+        double[] bidQuantity = new double[mockMarketDataConfiguration.getLevels()];
 
 
 		double prev_bid = midPrice;
@@ -112,7 +110,7 @@ public class MockMarketDataConnectorPublisher extends AbstractMarketDataConnecto
 
 	private Trade createTrade(MockMarketDataConfiguration mockMarketDataConfiguration) {
 
-		Trade newTrade = new Trade();
+		Trade newTrade = Trade.getInstance();
 		newTrade.setInstrument(mockMarketDataConfiguration.getInstrument().getPrimaryKey());
 		newTrade.setQuantity(mockMarketDataConfiguration.getStartMidQuantity());
 		newTrade.setPrice(mockMarketDataConfiguration.getStartMidPrice());
@@ -144,10 +142,10 @@ public class MockMarketDataConnectorPublisher extends AbstractMarketDataConnecto
 
 	private Depth modifyDepth(MockMarketDataConfiguration mockMarketDataConfiguration, Depth lastDepth) {
 
-		Double[] askPrice = lastDepth.getAsks();
-		Double[] bidPrice = lastDepth.getBids();
-		Double[] askQuantity = lastDepth.getAsksQuantities();
-		Double[] bidQuantity = lastDepth.getBidsQuantities();
+        double[] askPrice = lastDepth.getAsks();
+        double[] bidPrice = lastDepth.getBids();
+        double[] askQuantity = lastDepth.getAsksQuantities();
+        double[] bidQuantity = lastDepth.getBidsQuantities();
 		double midPrice = lastDepth.getMidPrice()*(1+((random.nextDouble()-0.5))/25);
 		midPrice = Precision.round(midPrice,precisionPrice);
 		double midQuantity = mockMarketDataConfiguration.getStartMidQuantity()*(1+((random.nextDouble()-0.5))/10);

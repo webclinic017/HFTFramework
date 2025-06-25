@@ -2,18 +2,8 @@ package com.lambda.investing.algorithmic_trading.reinforcement_learning.action;
 
 import com.google.common.collect.BiMap;
 import com.google.common.collect.HashBiMap;
-import com.google.common.primitives.Doubles;
-import com.google.common.primitives.Ints;
-import lombok.Getter;
-import lombok.Setter;
-import org.apache.commons.collections.BidiMap;
-import org.apache.commons.lang.ArrayUtils;
-import org.apache.commons.math3.exception.NumberIsTooLargeException;
-import org.apache.commons.math3.util.MathUtils;
 
-import java.util.*;
-
-import static org.apache.commons.math3.util.CombinatoricsUtils.binomialCoefficientDouble;
+import java.util.Objects;
 
 public class AvellanedaAction extends AbstractAction {
 
@@ -24,7 +14,7 @@ public class AvellanedaAction extends AbstractAction {
     public static Integer A_DEFAULT_INDEX = 4;
     public static Integer K_PERIOD_DEFAULT_INDEX = 5;
 
-    public static int ACTION_COLUMNS = 6;//WINDOWS_INDEX RISK_AVERSION_INDEX SKEW_PRICE_INDEX K_DEFAULT_INDEX A_DEFAULT_INDEX K_PERIOD_DEFAULT_INDEX
+    public static int SIZE_ARRAY_ACTION = 6;//WINDOWS_INDEX RISK_AVERSION_INDEX SKEW_PRICE_INDEX K_DEFAULT_INDEX A_DEFAULT_INDEX K_PERIOD_DEFAULT_INDEX
 
     private int[] windowsTick;
     private double[] riskAversion;
@@ -56,11 +46,36 @@ public class AvellanedaAction extends AbstractAction {
     }
 
     public int getNumberActionColumns() {
-        return ACTION_COLUMNS;
+        return SIZE_ARRAY_ACTION;
     }
+
+    public int getNumberActionColumnsDifferent() {
+        //check number of array elements constructor length >1
+        int count = 0;
+        if (windowsTick.length > 1) {
+            count++;
+        }
+        if (riskAversion.length > 1) {
+            count++;
+        }
+        if (skew.length > 1) {
+            count++;
+        }
+        if (kDefault.length > 1) {
+            count++;
+        }
+        if (aDefault.length > 1) {
+            count++;
+        }
+        if (kPeriod.length > 1) {
+            count++;
+        }
+        return count;
+    }
+
     private void fillCacheActions() {
         int counter = 0;
-        double[] inputArr = new double[ACTION_COLUMNS];
+        double[] inputArr = new double[SIZE_ARRAY_ACTION];
         for (int windowIndex = 0; windowIndex < windowsTick.length; windowIndex++) {
             for (int riskIndex = 0; riskIndex < riskAversion.length; riskIndex++) {
                 for (int skewIndex = 0; skewIndex < skew.length; skewIndex++) {
@@ -93,7 +108,7 @@ public class AvellanedaAction extends AbstractAction {
 
     @Override
     public int getAction(double[] actionArr) {
-        assert actionArr.length == ACTION_COLUMNS;
+        assert actionArr.length == SIZE_ARRAY_ACTION;
         /// iterative method
         ActionRow actionRow = new ActionRow(actionArr);
         Integer positionOut = actionIndexToArr.inverse().get(actionRow);
@@ -151,7 +166,7 @@ public class AvellanedaAction extends AbstractAction {
         }
 
         public double[] getArray() {
-            double[] output = new double[ACTION_COLUMNS];
+            double[] output = new double[SIZE_ARRAY_ACTION];
             output[WINDOWS_INDEX] = window;
             output[RISK_AVERSION_INDEX] = risk;
             output[SKEW_PRICE_INDEX] = skew;

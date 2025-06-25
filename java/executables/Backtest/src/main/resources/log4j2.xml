@@ -53,23 +53,26 @@
         <!--</Logger>-->
 
 
-        <Logger name="org.deeplearning4j" level="debug">
+        <AsyncLogger name="org.deeplearning4j" level="debug" additivity="false">
             <AppenderRef ref="${log.output}"/>
-        </Logger>
+        </AsyncLogger>
 
-        <Logger name="me.tongfei.progressbar" level="OFF">
+        <AsyncLogger name="me.tongfei.progressbar" level="OFF">
             <AppenderRef ref="console"/>
-        </Logger>
+        </AsyncLogger>
 
+
+        <AsyncLogger name="com.lambda" level="${log.level}" additivity="false">
+            <appender-ref ref="${log.output}"/>
+        </AsyncLogger>
 
         <!--<Logger name="com.lambda.investing.trading_engine_connector" level="debug">-->
         <!--<AppenderRef ref="backtest-file"/>-->
         <!--</Logger>-->
         <!--Console info output-->
-        <root level="${log.level}">
-            <appender-ref ref="${log.output}"/>
-        </root>
-
+        <!--        <root level="${log.level}">-->
+        <!--            <appender-ref ref="${log.output}"/>-->
+        <!--        </root>-->
 
     </loggers>
 </configuration>

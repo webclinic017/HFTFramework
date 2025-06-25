@@ -1,35 +1,34 @@
 {
   "backtest": {
-    "startDate": "20231113 06:00:00",
-    "endDate": "20231113 20:00:00",
-    "instrument": "btcusdt_kraken",
+    "startDate": "20250306 9:00:00",
+    "endDate": "20250306 11:00:00",
+    "instrument": "btceur_kraken",
     "delayOrderMs": 0,
     "feesCommissionsIncluded": false,
     "seed": 0,
     "multithreadConfiguration": "single_thread",
+    "bucleRun": false
   },
   "algorithm": {
     "algorithmName": "AlphaAvellanedaStoikov_test",
     "parameters": {
       "dummyAgent": 1,
-      "quantity": 0.0001,
+      "quantity": 0.001,
       "seed": 28220,
       "skewAction": [
         0.0,
-        1.0,
-        -1.0
+        2.0,
+        -2.0
       ],
       "riskAversionAction": [
-        0.06327,
-        0.31635,
-        0.6327,
-        0.9490500000000001
+        0.00006,
+        0.31635
       ],
       "midpricePeriodWindowAction": [
         24,
-        50
+        60
       ],
-      "midpricePeriodSeconds": 26,
+      "midpricePeriodSeconds": 4,
 
       "changeKPeriodSecondsAction": [
         60.0
@@ -94,7 +93,8 @@
       "kCalculation": "Pct",
       "positionMultiplier": 335.35,
       "spreadMultiplier": 5.0,
-      "ui": 0
+      "ui": 0,
+      "syntheticInstrumentFile": "StatArb_crypto.json"
     }
   }
 }

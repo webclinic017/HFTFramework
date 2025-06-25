@@ -1,12 +1,8 @@
 package com.lambda.investing.algorithmic_trading.reinforcement_learning;
 
-import com.google.common.primitives.Doubles;
-import com.lambda.investing.Configuration;
-import com.lambda.investing.algorithmic_trading.AlgorithmConnectorConfiguration;
 import com.lambda.investing.ArrayUtils;
-import com.lambda.investing.algorithmic_trading.AlgorithmState;
-import com.lambda.investing.algorithmic_trading.PnlSnapshot;
-import com.lambda.investing.algorithmic_trading.SingleInstrumentAlgorithm;
+import com.lambda.investing.Configuration;
+import com.lambda.investing.algorithmic_trading.*;
 import com.lambda.investing.algorithmic_trading.reinforcement_learning.action.AbstractAction;
 import com.lambda.investing.algorithmic_trading.reinforcement_learning.state.AbstractState;
 import com.lambda.investing.connector.zero_mq.ZeroMqConfiguration;
@@ -23,10 +19,10 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static com.lambda.investing.ArrayUtils.PrintDoubleArrayString;
 import static com.lambda.investing.Configuration.DELTA_REWARD_REINFORCEMENT_LEARNING;
 import static com.lambda.investing.Configuration.DISCOUNT_REWARD_NO_TRADE;
 import static com.lambda.investing.algorithmic_trading.AlgorithmState.STOPPED;
-import static com.lambda.investing.ArrayUtils.PrintDoubleArrayString;
 import static com.lambda.investing.algorithmic_trading.reinforcement_learning.SingleInstrumentRLReplier.GetStateColumnsAlgorithm;
 
 @Getter
@@ -122,7 +118,9 @@ public abstract class SingleInstrumentRLAlgorithm extends SingleInstrumentAlgori
         int states = this.state.getNumberOfColumns();
         int actions = this.action.getNumberActions();
         if (this.reinforcementLearningActionType.equals(ReinforcementLearningActionType.continuous)) {
-            actions = this.action.getNumberActionColumns();
+//            actions = this.action.getNumberActionColumns();
+            actions = this.action.getNumberActionColumnsDifferent();//just for printing purposes
+
         }
 
 
@@ -285,14 +283,20 @@ public abstract class SingleInstrumentRLAlgorithm extends SingleInstrumentAlgori
             return actionIndex;
         } else {
             // in discrete action is an index we have to transform to an array of values
-            double[] actionValues = new double[0];
+            double[] actionValues = null;
             int actionIndexValue = Math.round((float) actionIndex[0]);
             try {
                 actionValues = this.action.getAction(actionIndexValue);
             } catch (Exception e) {
-                logger.error("Error getting action values for action index {} actionValues {} ", actionIndexValue, Doubles.join(",", actionValues));
-                System.err.println("Error getting action values for action index " + actionIndexValue + " actionValues " + Doubles.join(",", actionValues));
+                logger.error("Error getting action values for action index {} ", actionIndexValue, e);
+                System.err.println("Error getting action values for action index " + actionIndexValue);
             }
+
+            if (actionValues == null || actionValues.length == 0) {
+                logger.error("[{}] GetActionValues returning null  ", this.getCurrentTime());
+                return actionValues;
+            }
+
             return actionValues;
         }
     }
@@ -369,11 +373,16 @@ public abstract class SingleInstrumentRLAlgorithm extends SingleInstrumentAlgori
 
     protected double getCurrentReward() {
         PnlSnapshot lastPnlSnapshot = getLastPnlSnapshot(this.instrument.getPrimaryKey());
+        PortfolioManager portfolioManager = getPortfolioManager();
+        if (portfolioManager == null) {
+            logger.warn("no portfolioManager to getCurrentReward");
+            return 0;
+        }
         if (lastPnlSnapshot == null) {
             logger.warn("no lastPnlSnapshot found for {} ", this.instrument.getPrimaryKey());
             return 0;
         }
-        double reward = ScoreUtils.getReward(scoreEnum, lastPnlSnapshot);
+        double reward = ScoreUtils.getReward(scoreEnum, portfolioManager);//all instruments in case of hedging
         double qtyMean = getQuantityMean();
         if (DELTA_REWARD_REINFORCEMENT_LEARNING) {
             double initialReward = rewardStartStep == DEFAULT_LAST_Q ? 0 : rewardStartStep;
@@ -381,8 +390,8 @@ public abstract class SingleInstrumentRLAlgorithm extends SingleInstrumentAlgori
             double initialMid = midStartStep == DEFAULT_LAST_Q ? getLastMidPrice() : midStartStep;
 
             rewardStartStep = reward;
-            tradesStartStep = lastPnlSnapshot.numberOfTrades.get();
-            midStartStep = lastPnlSnapshot.getLastDepth().get(getInstrument()).getMidPrice();
+            tradesStartStep = (int) portfolioManager.numberOfTrades;
+            midStartStep = lastPnlSnapshot.getLastDepth().getMidPrice();
 
             reward = reward - initialReward;
             if (DISCOUNT_REWARD_NO_TRADE && reward == 0 && initialNumberTrades == tradesStartStep && initialMid != 0.0) {

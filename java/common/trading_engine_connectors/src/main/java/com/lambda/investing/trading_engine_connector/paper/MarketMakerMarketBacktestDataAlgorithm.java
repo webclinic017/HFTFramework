@@ -24,14 +24,22 @@ public class MarketMakerMarketBacktestDataAlgorithm implements MarketDataListene
     }
 
     private void refreshDepth(Depth depth) {
-        //modify mm orders with new depth
-        tradingEngineConnector.fillOrderbook(depth);
-        //notification of new depth will be inside the method
+        try {
+            //modify mm orders with new depth
+            tradingEngineConnector.fillOrderbook(depth);
+            //notification of new depth will be inside the method
+        } catch (Exception e) {
+            logger.error("Error refreshing depth: {}", e.getMessage(), e);
+        }
     }
 
     private void refreshTrade(Trade trade) {
-        //is acting as a market order
-        tradingEngineConnector.fillMarketTrade(trade);
+        try {
+            //is acting as a market order
+            tradingEngineConnector.fillMarketTrade(trade);
+        } catch (Exception e) {
+            logger.error("Error refreshing trade: {}", e.getMessage(), e);
+        }
     }
 
     private void waitToBeFree() {

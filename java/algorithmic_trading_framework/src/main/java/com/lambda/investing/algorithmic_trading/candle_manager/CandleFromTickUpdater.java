@@ -2,17 +2,14 @@ package com.lambda.investing.algorithmic_trading.candle_manager;
 
 
 import com.lambda.investing.algorithmic_trading.Algorithm;
-import com.lambda.investing.algorithmic_trading.reinforcement_learning.state.StateManager;
-import com.lambda.investing.model.asset.Instrument;
-import com.lambda.investing.model.candle.Candle;
-import com.lambda.investing.model.candle.CandleType;
 import com.lambda.investing.model.market_data.Depth;
 import com.lambda.investing.model.market_data.Trade;
-import lombok.Getter;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class CandleFromTickUpdater {

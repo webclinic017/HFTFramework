@@ -51,6 +51,34 @@ public class MeanReversionAction extends AbstractAction {
     public int getNumberActionColumns() {
         return SIZE_ARRAY_ACTION;
     }
+
+    public int getNumberActionColumnsDifferent() {
+        //check number of array elements constructor length >1
+        int count = 0;
+        if (periods.length > 1) {
+            count++;
+        }
+        if (upperBounds.length > 1) {
+            count++;
+        }
+        if (upperBoundsExits.length > 1) {
+            count++;
+        }
+        if (lowerBounds.length > 1) {
+            count++;
+        }
+        if (lowerBoundsExits.length > 1) {
+            count++;
+        }
+        if (changeSides.length > 1) {
+            count++;
+        }
+        if (levelToQuotes.length > 1) {
+            count++;
+        }
+        return count;
+    }
+
     private void fillCacheActions() {
         int counter = 0;
         double[] inputArr = new double[SIZE_ARRAY_ACTION];

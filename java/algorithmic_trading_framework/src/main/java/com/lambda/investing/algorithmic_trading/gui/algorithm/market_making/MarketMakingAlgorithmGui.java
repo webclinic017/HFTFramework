@@ -1,14 +1,15 @@
 package com.lambda.investing.algorithmic_trading.gui.algorithm.market_making;
 
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
+
 import com.intellij.uiDesigner.core.GridConstraints;
 import com.intellij.uiDesigner.core.GridLayoutManager;
 import com.intellij.uiDesigner.core.Spacer;
 import com.lambda.investing.Configuration;
+import com.lambda.investing.LambdaThreadFactory;
 import com.lambda.investing.algorithmic_trading.PnlSnapshot;
+import com.lambda.investing.algorithmic_trading.PortfolioSnapshot;
 import com.lambda.investing.algorithmic_trading.gui.algorithm.AlgorithmGui;
 import com.lambda.investing.algorithmic_trading.gui.algorithm.DepthTableModel;
-import com.lambda.investing.algorithmic_trading.gui.algorithm.arbitrage.statistical_arbitrage.StatisticalArbitrageAlgorithmGui;
 import com.lambda.investing.algorithmic_trading.gui.timeseries.TickTimeSeries;
 import com.lambda.investing.connector.ordinary.thread_pool.ThreadPoolExecutorChannels;
 import com.lambda.investing.market_data_connector.parquet_file_reader.ParquetMarketDataConnectorPublisher;
@@ -30,10 +31,9 @@ import javax.swing.event.ChangeEvent;
 import java.awt.*;
 import java.util.*;
 import java.util.List;
+import java.util.Queue;
 import java.util.concurrent.*;
 
-import static com.lambda.investing.ArrayUtils.ArrayReverse;
-import static com.lambda.investing.algorithmic_trading.AlgorithmParameters.getParameterString;
 import static com.lambda.investing.algorithmic_trading.gui.main.MainMenuGUI.IS_BACKTEST;
 import static com.lambda.investing.model.Util.toJsonString;
 import static com.lambda.investing.model.asset.Instrument.round;
@@ -92,8 +92,10 @@ public class MarketMakingAlgorithmGui implements AlgorithmGui {
     private static final long TIMEOUT_UPDATE_PORTFOLIO_SECONDS = 60;
     private long lastUpdateTimestamp = 0L;
     private long lastUpdatePnlSnapshot = 0L;
+    private Instrument instrument;
 
     public MarketMakingAlgorithmGui(ChartTheme theme, Instrument instrument) {
+        this.instrument = instrument;
         depthTables = new ConcurrentHashMap<>();
         lastPnlSnapshot = new HashMap<>();
 
@@ -102,7 +104,7 @@ public class MarketMakingAlgorithmGui implements AlgorithmGui {
         positionTimeSeries = new TickTimeSeries(theme, positionPanelTick, "Position", "Date", "Position");
         initializeThreadpool(instrument);
         initializeSpeedSlider();
-        updatePnlSnapshot(new PnlSnapshot());//initial update
+        updatePnlSnapshot(new PnlSnapshot(this.instrument.getPrimaryKey()));//initial update
 
         depthTabs.remove(0);//remove na tab
     }
@@ -127,20 +129,12 @@ public class MarketMakingAlgorithmGui implements AlgorithmGui {
 
 
     private void initializeThreadpool(Instrument instrument) {
-
-        ThreadFactoryBuilder threadFactoryBuilder = new ThreadFactoryBuilder();
-        threadFactoryBuilder.setNameFormat(instrument.getPrimaryKey() + "_MarketMakingAlgorithmGuiBuffered" + "-%d");
-        threadFactoryBuilder.setPriority(Thread.MIN_PRIORITY);
-        ThreadFactory namedThreadFactory = threadFactoryBuilder.build();
+        ThreadFactory namedThreadFactory = LambdaThreadFactory.createThreadFactory(instrument.getPrimaryKey() + "_MarketMakingAlgorithmGuiBuffered", Thread.MIN_PRIORITY);
 
         guiThreadPoolBuffered = new ThreadPoolExecutorChannels(null, 1, GUI_THREAD_POOL_SIZE_BUFFERED, 60, TimeUnit.SECONDS
                 , new LinkedBlockingQueue<Runnable>(), namedThreadFactory, true);
 
-
-        ThreadFactoryBuilder threadFactoryBuilder1 = new ThreadFactoryBuilder();
-        threadFactoryBuilder1.setNameFormat(instrument.getPrimaryKey() + "_MarketMakingAlgorithmGui" + "-%d");
-        threadFactoryBuilder1.setPriority(Thread.MIN_PRIORITY);
-        ThreadFactory namedThreadFactory1 = threadFactoryBuilder1.build();
+        ThreadFactory namedThreadFactory1 = LambdaThreadFactory.createThreadFactory(instrument.getPrimaryKey() + "_MarketMakingAlgorithmGui", Thread.MIN_PRIORITY);
 
         guiThreadPool = new ThreadPoolExecutorChannels("MarketMakingAlgorithmGui", 1, GUI_THREAD_POOL_SIZE, 60, TimeUnit.SECONDS
                 , new LinkedBlockingQueue<Runnable>(), namedThreadFactory1, false);
@@ -199,6 +193,7 @@ public class MarketMakingAlgorithmGui implements AlgorithmGui {
             boolean updateTimeSeries = MARKET_DATA_MIN_TIME_MS > 0 && (depth.getTimestamp() - marketDataTimeSeries.getLastTimestamp()) > MARKET_DATA_MIN_TIME_MS;
             if (!depthTables.containsKey(depth.getInstrument())) {
                 initializeDepthTable(depth.getInstrument());
+
             }
 
             Runnable runnable = new Runnable() {
@@ -206,10 +201,13 @@ public class MarketMakingAlgorithmGui implements AlgorithmGui {
                     //update orderbook table
                     DepthTableModel depthTable = depthTables.get(depth.getInstrument()).depthTableModel;
                     depthTable.updateDepth(depth);
-                    //update timeseries tab
 
-                    marketDataTimeSeries.updateTimeSerie(TickTimeSeries.ASK_SERIE, depth.getTimestamp(), depth.getBestAsk());
-                    marketDataTimeSeries.updateTimeSerie(TickTimeSeries.BID_SERIE, depth.getTimestamp(), depth.getBestBid());
+                    //update timeseries tab
+                    if (depth.getInstrument().equals(instrument.getPrimaryKey())) {
+                        marketDataTimeSeries.updateTimeSerie(TickTimeSeries.ASK_SERIE, depth.getTimestamp(), depth.getBestAsk());
+                        marketDataTimeSeries.updateTimeSerie(TickTimeSeries.BID_SERIE, depth.getTimestamp(), depth.getBestBid());
+                    }
+
 
                     boolean refreshPnl = depth.getTimestamp() - lastUpdatePnlSnapshot > TIMEOUT_UPDATE_PORTFOLIO_SECONDS * 1000;
                     if (refreshPnl) {
@@ -262,7 +260,8 @@ public class MarketMakingAlgorithmGui implements AlgorithmGui {
             }
 
             if (isTrade) {
-                Trade trade = new Trade(executionReport);
+                Trade trade = Trade.getInstance();
+                trade.setTradeFromExecutionReport(executionReport);
                 updateTrade(trade);
             }
 
@@ -323,6 +322,11 @@ public class MarketMakingAlgorithmGui implements AlgorithmGui {
             }
         };
         updateGUI(runnable);
+
+    }
+
+    @Override
+    public void updatePortfolioSnapshot(PortfolioSnapshot portfolioSnapshot) {
 
     }
 

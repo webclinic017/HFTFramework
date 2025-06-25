@@ -1,8 +1,5 @@
 package com.lambda.investing.market_data_connector.xchange;
 
-import com.binance.api.client.domain.event.DepthEvent;
-import com.binance.api.client.domain.market.OrderBookEntry;
-import com.lambda.investing.binance.BinanceBrokerConnector;
 import com.lambda.investing.connector.ConnectorConfiguration;
 import com.lambda.investing.connector.ConnectorPublisher;
 import com.lambda.investing.market_data_connector.AbstractMarketDataConnectorPublisher;
@@ -12,7 +9,6 @@ import com.lambda.investing.model.asset.Instrument;
 import com.lambda.investing.model.market_data.Depth;
 import com.lambda.investing.model.market_data.Trade;
 import com.lambda.investing.xchange.*;
-import info.bitrich.xchangestream.core.ProductSubscription;
 import info.bitrich.xchangestream.core.StreamingExchange;
 import io.reactivex.rxjava3.disposables.Disposable;
 import org.apache.commons.lang3.ArrayUtils;
@@ -118,7 +114,7 @@ public class XChangeMarketDataPublisher extends AbstractMarketDataConnectorPubli
 				return;
 			}
 
-			Trade tradeToNotify = new Trade();
+			Trade tradeToNotify = Trade.getInstance();
 			tradeToNotify.setInstrument(instrument.getPrimaryKey());
 			//			tradeToNotify.setTimestamp(System.currentTimeMillis());
 			tradeToNotify.setTimestamp(currentDate.getTime());
@@ -153,14 +149,14 @@ public class XChangeMarketDataPublisher extends AbstractMarketDataConnectorPubli
 			if (CHECK_SEND_TIMESTAMP && currentDate.getTime() < lastDepthSentTimestamp) {
 				return;
 			}
-			Depth depth = new Depth();
+			Depth depth = Depth.getInstancePool();
 			depth.setInstrument(instrument.getPrimaryKey());
 			depth.setTimestamp(currentDate.getTime());
 			//			depth.setTimestamp(System.currentTimeMillis());
 			boolean anyError = false;
 			int askDepth = Math.min(orderbook.getAsks().size(), MAX_DEPTH);
-			Double asks[] = new Double[askDepth];
-			Double askQtys[] = new Double[askDepth];
+            double asks[] = new double[askDepth];
+            double askQtys[] = new double[askDepth];
 			int indexAsk = 0;
 			try {
 				for (LimitOrder askEntry : orderbook.getAsks()) {
@@ -186,8 +182,8 @@ public class XChangeMarketDataPublisher extends AbstractMarketDataConnectorPubli
 			}
 
 			int bidDepth = Math.min(orderbook.getBids().size(), MAX_DEPTH);
-			Double bids[] = new Double[bidDepth];
-			Double bidQtys[] = new Double[bidDepth];
+            double bids[] = new double[bidDepth];
+            double bidQtys[] = new double[bidDepth];
 			int indexBid = 0;
 			try {
 				for (LimitOrder bidEntry : orderbook.getBids()) {

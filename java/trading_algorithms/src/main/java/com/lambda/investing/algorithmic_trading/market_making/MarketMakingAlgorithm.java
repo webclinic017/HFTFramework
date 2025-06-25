@@ -27,5 +27,8 @@ import java.util.Map;
 		super.setInstrument(instrument);
 	}
 
-
+	@Override
+	public void setParameters(Map<String, Object> parameters) {
+		super.setParameters(parameters);
+	}
 }

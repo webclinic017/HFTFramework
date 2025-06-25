@@ -122,7 +122,7 @@ public class TableSawParquetDataManagerTest {
 
 
         List<Trade> listToPersist = new ArrayList<>();
-        Trade tradeParquet = new Trade();
+        Trade tradeParquet = Trade.getInstance();
         tradeParquet.setQuantity(1.5);
         tradeParquet.setPrice(2.5);
 

@@ -15,8 +15,8 @@ public class PnlSnapshotOrders extends PnlSnapshot {
 	protected TreeMap<Double, Double> openSells;
 	protected TreeMap<Double, Double> openFees;//price to fee
 
-	public PnlSnapshotOrders() {
-		super();
+	public PnlSnapshotOrders(String instrumentPk) {
+		super(instrumentPk);
 		openSells = new TreeMap<>();
 		openBuys = new TreeMap<>();
 		openFees = new TreeMap<>();
@@ -154,8 +154,6 @@ public class PnlSnapshotOrders extends PnlSnapshot {
 		lastQuantity = executionReport.getLastQuantity();
 		lastVerb = executionReport.getVerb().name();
 		lastClOrdId = executionReport.getClientOrderId();
-		instrumentPk = executionReport.getInstrument();
-
 		//		lastPrice = Math.min(lastPrice, maxExecutionPriceValid);
 		//		lastPrice = Math.max(lastPrice, minExecutionPriceValid);
 		//		if (lastPrice == maxExecutionPriceValid || lastPrice == minExecutionPriceValid) {
@@ -238,15 +236,9 @@ public class PnlSnapshotOrders extends PnlSnapshot {
 		//number of trades
 		numberOfTrades.incrementAndGet();
 		lastTimestampExecutionReportUpdate = executionReport.getTimestampCreation();
-
-		//
-		if (lastDepth.containsKey(instrument)) {
-			Depth depth = lastDepth.get(instrument);
-			if (depth.getTimestamp() < lastTimestampExecutionReportUpdate) {
-				depth.setTimestamp(lastTimestampExecutionReportUpdate);
-			}
-			updateDepth(depth);//to avoid save it earlier
-		}//update unrealized pnl
+		if (numberOfTrades.get() > 1) {
+			updateDepth(lastDepth);//update unrealized pnl
+		}
 		totalPnl = realizedPnl + unrealizedPnl;
 		totalFees = realizedFees + unrealizedFees;
 		//historical only Cf or Pf
@@ -263,8 +255,8 @@ public class PnlSnapshotOrders extends PnlSnapshot {
 		Set<Double> priceSet = priceMap.keySet();
 
 		int levelsOrderbook = depth.getAskLevels();
-		Double[] quantities = depth.getAsksQuantities();
-		Double[] prices = depth.getAsks();
+		double[] quantities = depth.getAsksQuantities();
+		double[] prices = depth.getAsks();
 
 		if (netPosition > 0) {
 			priceMap = openSells;
@@ -334,13 +326,14 @@ public class PnlSnapshotOrders extends PnlSnapshot {
 	}
 
 	public synchronized void updateDepth(Depth depth) {
-		if (!depth.isDepthFilled()) {
+		if (depth == null || !depth.isDepthFilled()) {
 			return;
 		}
 		Instrument instrument = Instrument.getInstrument(depth.getInstrument());
-		if (lastDepth.containsKey(instrument) && lastDepth.get(instrument).getTimestamp() > depth.getTimestamp()) {
+		if (lastDepth != null && lastDepth.getTimestamp() > depth.getTimestamp()) {
 			return;
 		}
+
 
 		double quantityMultiplier = DEFAULT_QUANTITY_MULTIPLIER;
 		if (instrument != null) {
@@ -353,9 +346,9 @@ public class PnlSnapshotOrders extends PnlSnapshot {
 		}
 		totalPnl = unrealizedPnl + realizedPnl;
 		totalFees = realizedFees + unrealizedFees;
-		lastDepth.put(instrument, depth);
+		lastDepth = depth;
 		spread = depth.getSpread();
-		updateHistoricals(depth.getTimestamp());
+//		updateHistoricals(depth.getTimestamp());
 
 	}
 

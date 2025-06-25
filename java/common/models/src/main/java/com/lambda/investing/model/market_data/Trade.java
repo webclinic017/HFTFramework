@@ -6,32 +6,86 @@ import com.lambda.investing.model.trading.ExecutionReport;
 import com.lambda.investing.model.trading.Verb;
 import lombok.Getter;
 import lombok.Setter;
-import lombok.ToString;
 
-import java.util.Date;
 import java.util.UUID;
 
 import static com.lambda.investing.model.Util.*;
 
-@Getter @Setter public class Trade extends CSVable {
-
+@Getter
+@Setter
+public class Trade extends CSVable implements Cloneable {
+	public static double DEFAULT_VALUE = Double.NaN;
 	private String id;
 	private String instrument;
-	private Long timestamp;
-	private Double quantity, price;//TODO change to Bigdecimal
+	private long timestamp;
+	private double quantity, price = DEFAULT_VALUE;
 	private String algorithmInfo;//just for backtesting
 	private Verb verb;
 	private long timeToNextUpdateMs = Long.MIN_VALUE;
+	private static TradePool TRADE_POOL = new TradePool();
 
-	private String generateId() {
+	public static String generateId() {
 		return UUID.randomUUID().toString();
 	}
 
-	public Trade() {
-		id = generateId();
+	public static Trade getInstance() {
+		Trade trade = new Trade();
+		trade.id = generateId();
+		return trade;
 	}
 
-	public Trade(TradeParquet tradeParquet, Instrument instrument) {
+	public static Trade getInstancePool() {
+		Trade trade = TRADE_POOL.checkOut();
+		trade.reset();
+		trade.id = generateId();
+		return trade;
+	}
+
+	public static Trade copyFrom(Trade trade) {
+		Trade newTrade = getInstancePool();
+		newTrade.id = trade.id;
+		newTrade.instrument = trade.instrument;
+		newTrade.timestamp = trade.timestamp;
+		newTrade.quantity = trade.quantity;
+		newTrade.price = trade.price;
+		newTrade.algorithmInfo = trade.algorithmInfo;
+		newTrade.verb = trade.verb;
+		newTrade.timeToNextUpdateMs = trade.timeToNextUpdateMs;
+		return newTrade;
+	}
+
+	public void delete() {
+		delete(-1);
+	}
+
+	public void delete(int milliseconds) {
+		if (milliseconds > 0) {
+			TRADE_POOL.lazyCheckIn(this, milliseconds);
+		} else {
+			TRADE_POOL.checkIn(this);
+		}
+	}
+
+	public static String logPool() {
+		return TRADE_POOL.toString();
+	}
+
+	private void reset() {
+		id = null;
+		instrument = null;
+		timestamp = 0;
+		quantity = DEFAULT_VALUE;
+		price = DEFAULT_VALUE;
+		algorithmInfo = null;
+		verb = null;
+		timeToNextUpdateMs = Long.MIN_VALUE;
+	}
+
+	private Trade() {
+
+	}
+
+	public void setTradeFromParquet(TradeParquet tradeParquet, Instrument instrument) {
 		this.instrument = instrument.getPrimaryKey();
 		this.timestamp = tradeParquet.getTimestamp();
 		this.quantity = tradeParquet.getQuantity();
@@ -40,7 +94,7 @@ import static com.lambda.investing.model.Util.*;
 
 	}
 
-	public Trade(ExecutionReport executionReport) {
+	public void setTradeFromExecutionReport(ExecutionReport executionReport) {
 		this.instrument = executionReport.getInstrument();
 		this.timestamp = executionReport.getTimestampCreation();
 		this.quantity = executionReport.getLastQuantity();
@@ -68,6 +122,9 @@ import static com.lambda.investing.model.Util.*;
 	}
 
 	@Override public String toString() {
+		if (price == DEFAULT_VALUE) {
+			return "trade is empty";
+		}
 		return toJsonString(this);
 	}
 
@@ -98,5 +155,17 @@ import static com.lambda.investing.model.Util.*;
 	@JSONField(serialize = false, deserialize = false)
 	@Override public Object getParquetObject() {
 		return new TradeParquet(this);
+	}
+
+	@Override
+	public Object clone() throws CloneNotSupportedException {
+		return super.clone();
+	}
+
+	public static class TradePool extends ObjectPool<Trade> {
+		@Override
+		protected Trade create() {
+			return new Trade();
+		}
 	}
 }

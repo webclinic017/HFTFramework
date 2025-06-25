@@ -5,12 +5,10 @@ import com.lambda.investing.model.exception.LambdaTradingException;
 import com.lambda.investing.model.market_data.Depth;
 import com.lambda.investing.model.trading.*;
 import com.lambda.investing.trading_engine_connector.paper.PaperTradingEngine;
-import org.apache.curator.shaded.com.google.common.collect.EvictingQueue;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.lambda.investing.market_data_connector.csv_file_reader.CSVMarketDataConnectorPublisher.ALGORITHM_INFO_MM;
@@ -40,10 +38,11 @@ public class OrderbookManager {
     private AtomicInteger orderId;
     private boolean verbose = false;
     protected PaperTradingEngine paperTradingEngineConnector;
-    private long lastTimestamp = -1;
+
     private Map<String, Depth> asyncNotification;
     protected String instrumentPk;
     protected Instrument instrument;
+    protected volatile long lastTimestamp = 0L;
 
     private Object lockOrderRequest = new Object();
 
@@ -380,7 +379,7 @@ public class OrderbookManager {
 
     private void notifyMarketTradeOnMarketMakerOnlyTrade(Trade trade, OrderReport orderReport,
                                                          OrderRequest orderRequest) {
-        com.lambda.investing.model.market_data.Trade tradeNotify = new com.lambda.investing.model.market_data.Trade();
+        com.lambda.investing.model.market_data.Trade tradeNotify = com.lambda.investing.model.market_data.Trade.getInstance();
         tradeNotify.setInstrument(orderRequest.getInstrument());
         tradeNotify.setAlgorithmInfo(MARKET_MAKER_ALGORITHM_INFO);
 
@@ -488,6 +487,7 @@ public class OrderbookManager {
 
     protected void notifyExecutionReport(ExecutionReport executionReport) {
         if (!executionReport.getAlgorithmInfo().equalsIgnoreCase(MARKET_MAKER_ALGORITHM_INFO)) {
+            executionReport.updateTimestampCreation(lastTimestamp);//set executionReport time of last time
             paperTradingEngineConnector.notifyExecutionReport(executionReport);
         }
 
@@ -496,8 +496,8 @@ public class OrderbookManager {
 
         if (isTrade) {
             //notify trade
-            com.lambda.investing.model.market_data.Trade trade = new com.lambda.investing.model.market_data.Trade(
-                    executionReport);
+            com.lambda.investing.model.market_data.Trade trade = com.lambda.investing.model.market_data.Trade.getInstance();
+            trade.setTradeFromExecutionReport(executionReport);
             paperTradingEngineConnector.notifyTrade(trade);
 
         }

@@ -215,10 +215,14 @@ public class Instrument {
 
     public static double round(double value, int places, RoundingMode roundingMode) {
         if (places < 0) throw new IllegalArgumentException();
-
-        BigDecimal bd = BigDecimal.valueOf(value);
-        bd = bd.setScale(places, roundingMode);
-        return bd.doubleValue();
+        try {
+            BigDecimal bd = BigDecimal.valueOf(value);
+            bd = bd.setScale(places, roundingMode);
+            return bd.doubleValue();
+        } catch (NumberFormatException e) {
+            logger.error("error rounding value {} to {} places", value, places);
+            return value;
+        }
     }
 
 

@@ -3,7 +3,6 @@ package com.lambda.investing;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.slf4j.helpers.MessageFormatter;
-import org.springframework.core.env.Environment;
 
 import java.text.SimpleDateFormat;
 import java.util.Random;
@@ -29,6 +28,11 @@ public class Configuration {
     public static int BACKTEST_BUSY_THREADPOOL_TRESHOLD = 3;
     public static int BACKTEST_SYNCHRONIZED_TRADES_DEPTH_MAX_MS = 0;//Already Synchronizing in PersistorMarketDataConnector InstrumentCache
 
+    public static boolean BACKTEST_REFRESH_DEPTH_ORDER_REQUEST = false;//if true algo requests are going to change the depth and notify it to the algos -> good for testing cyclical updates and check updates/removeMe
+    public static boolean BACKTEST_REFRESH_DEPTH_TRADES = false;//if true trades are going to change the depth and notify it to the algos -> good for testing cyclical updates and check updates/removeMe
+    public static long REFRESH_DEPTH_ORDER_REQUEST_MS = 1;//if >0, the depth is going to be refreshed with this ms later, 0 will be the same time and ignore in algorithm entry
+
+
     //algos engine
     public static int BACKTEST_THREADS_PUBLISHING_ORDER_REQUEST = 1;//required >0 for latency simulation
     public static int BACKTEST_THREADS_LISTENING_EXECUTION_REPORTS = 0;
@@ -40,13 +44,33 @@ public class Configuration {
     //					.indexOf("-agentlib:jdwp") > 0;
 
     public static long RANDOM_SEED = 0;
-
+    public static long PORTFOLIO_MANAGER_UPDATE_FREQUENCY_MS = 15000;
     public static boolean USE_IPC_RL_TRAINING = getEnvOrDefault("USE_IPC_RL_TRAINING", "False").equalsIgnoreCase("True");//if true, the training is going to be done in the same process
     public static boolean DELTA_REWARD_REINFORCEMENT_LEARNING = true;//if true, the reward is the difference between the current and previous reward
     public static boolean DISCOUNT_REWARD_NO_TRADE = !getEnvOrDefault("DISCOUNT_REWARD_NO_TRADE", "").isEmpty();//if true delta reward is going to be negative if not operations -> force more trading
     public static boolean LOG_STATE_STEPS = !getEnvOrDefault("LOG_STATE_STEPS", "").isEmpty();//disable if not debugging
     public static Random RANDOM_GENERATOR = new Random();
     public static Logger logger = LogManager.getLogger(Configuration.class);
+    public static boolean IS_LINUX = System.getProperty("os.name").toLowerCase().contains("linux");
+    public static int NUMBER_OF_CORES = Runtime.getRuntime().availableProcessors();
+    public static boolean USE_THREAD_AFFINITY = Boolean.parseBoolean(getEnvOrDefault("USE_THREAD_AFFINITY", "false"));//if true, the threads are going to be pinned to the cores
+
+    public static int[] GET_AFFINITY_CPUS() throws LambdaConfigurationException {
+        if (!USE_THREAD_AFFINITY) {
+            throw new LambdaConfigurationException("USE_AFFINITY disabled.");
+        }
+
+        if (IS_LINUX || NUMBER_OF_CORES < 32) {
+            // Linux or less than 32 cores, use all available cores
+            int[] cpus = new int[NUMBER_OF_CORES];
+            for (int i = 0; i < NUMBER_OF_CORES; i++) {
+                cpus[i] = i;
+            }
+            return cpus;
+        }
+        throw new LambdaConfigurationException("Unsupported OS or number of cores: " + System.getProperty("os.name") + " with " + NUMBER_OF_CORES + " cores. Only Linux or less than 32 cores are supported.");
+
+    }
 
     public static void SET_MULTITHREAD_CONFIGURATION(MULTITHREAD_CONFIGURATION MULTITHREADING_CORE) {
         System.out.println("SET_MULTITHREAD_CONFIGURATION to " + MULTITHREADING_CORE.name());
@@ -127,5 +151,33 @@ public class Configuration {
             "D:\\javif\\Coding\\cryptotradingdesk\\java\\temp");
 
     public static SimpleDateFormat FILE_CSV_DATE_FORMAT = new SimpleDateFormat("yyyyMMdd");
+
+    public static class LambdaConfigurationException extends Exception {
+        public LambdaConfigurationException(String errorMessage) {
+            super(errorMessage);
+        }
+
+        public LambdaConfigurationException(Exception errorMessage) {
+            super(errorMessage);
+        }
+
+    }
+
+    public static String print() {
+        //print all public fields of this class as json
+        StringBuilder sb = new StringBuilder();
+        sb.append("{\n");
+        for (java.lang.reflect.Field field : Configuration.class.getFields()) {
+            try {
+                sb.append("  \"").append(field.getName()).append("\": ");
+                sb.append("\"").append(field.get(null)).append("\",\n");
+            } catch (IllegalAccessException e) {
+                sb.append("  \"").append(field.getName()).append("\": \"<access error>\",\n");
+            }
+        }
+        sb.setLength(sb.length() - 2); // remove last comma
+        sb.append("\n}");
+        return sb.toString();
+    }
 
 }

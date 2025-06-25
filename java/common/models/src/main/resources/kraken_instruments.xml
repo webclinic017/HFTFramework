@@ -4,18 +4,18 @@
        xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util.xsd">
 
     <!--    https://support.kraken.com/hc/en-us/articles/360000526126-What-are-Maker-and-Taker-fees 0.25 -->
-    <bean id="btcusdt_kraken" class="com.lambda.investing.model.asset.Instrument" init-method="addMap">
-        <property name="symbol" value="btcusdt"></property>
-        <property name="market" value="kraken"></property>
-        <property name="currency" value="USDT"></property>
-        <property name="priceTick" value="0.01"></property>
-        <property name="quantityTick" value="0.00001"></property>
+    <!--    <bean id="btcusdt_kraken" class="com.lambda.investing.model.asset.Instrument" init-method="addMap">-->
+    <!--        <property name="symbol" value="btcusdt"></property>-->
+    <!--        <property name="market" value="kraken"></property>-->
+    <!--        <property name="currency" value="USDT"></property>-->
+    <!--        <property name="priceTick" value="0.01"></property>-->
+    <!--        <property name="quantityTick" value="0.00001"></property>-->
 
-        <!--        <property name="makerFeePct" value="0.25"></property>-->
-        <!--        <property name="takerFeePct" value="0.40"></property>-->
-        <property name="makerFeePct" value="0.0"></property>
-        <property name="takerFeePct" value="0.10"></property>
-    </bean>
+    <!--        &lt;!&ndash;        <property name="makerFeePct" value="0.25"></property>&ndash;&gt;-->
+    <!--        &lt;!&ndash;        <property name="takerFeePct" value="0.40"></property>&ndash;&gt;-->
+    <!--        <property name="makerFeePct" value="0.0"></property>-->
+    <!--        <property name="takerFeePct" value="0.10"></property>-->
+    <!--    </bean>-->
 
     <bean id="btceur_kraken" class="com.lambda.investing.model.asset.Instrument" init-method="addMap">
         <property name="symbol" value="btceur"></property>
@@ -316,10 +316,10 @@
         <ref bean="etheur_kraken"/>
         <ref bean="soleur_kraken"/>
         <ref bean="xrpeur_kraken"/>
-        <ref bean="adaeur_kraken"/>
-        <ref bean="doteur_kraken"/>
-        <ref bean="usdteur_kraken"/>
-        <ref bean="usdceur_kraken"/>
+        <!--        <ref bean="adaeur_kraken"/>-->
+        <!--        <ref bean="doteur_kraken"/>-->
+        <!--        <ref bean="usdteur_kraken"/>-->
+        <!--        <ref bean="usdceur_kraken"/>-->
 
         <!--        MEME https://coinmarketcap.com/view/memes/-->
         <ref bean="dogeeur_kraken"/>
@@ -328,13 +328,13 @@
         <ref bean="wifeur_kraken"/>
         <ref bean="bonkeur_kraken"/>
 
-        <!-- AI https://coinmarketcap.com/view/ai-big-data/-->
+        <!--        &lt;!&ndash; AI https://coinmarketcap.com/view/ai-big-data/&ndash;&gt;-->
         <ref bean="neareur_kraken"/>
         <ref bean="icpeur_kraken"/>
         <ref bean="rendereur_kraken"/>
 
 
-        <!-- GAMING https://coinmarketcap.com/view/gaming/-->
+        <!--        &lt;!&ndash; GAMING https://coinmarketcap.com/view/gaming/&ndash;&gt;-->
         <ref bean="imxeur_kraken"/>
         <ref bean="flokieur_kraken"/>
         <ref bean="galaeur_kraken"/>

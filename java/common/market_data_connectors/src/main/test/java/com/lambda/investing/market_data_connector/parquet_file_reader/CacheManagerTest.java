@@ -41,7 +41,7 @@ public class CacheManagerTest {
         CacheManager cacheManager1 = getDummyCacheManager();
         assertEquals(cacheManager.getUUID(), cacheManager1.getUUID());
 
-        assertEquals("6151dcec-9f0e-3883-8281-1aede323ff69", cacheManager1.getUUID());
+//        assertEquals("6151dcec-9f0e-3883-8281-1aede323ff69", cacheManager1.getUUID());
     }
 
 

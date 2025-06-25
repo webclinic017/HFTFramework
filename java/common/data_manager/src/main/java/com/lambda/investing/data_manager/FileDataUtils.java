@@ -19,7 +19,6 @@ import tech.tablesaw.selection.Selection;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.Serializable;
 import java.text.DecimalFormat;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -159,6 +158,44 @@ public class FileDataUtils {
         return target;
     }
 
+    private static Table ensureColumnTypeConsistency(Table source, Table target) {
+        // Create a copy of the table that we'll modify
+        Table modifiedSource = source.copy();
+
+        // For each column in the source table
+        for (Column sourceColumn : source.columns()) {
+            String columnName = sourceColumn.name();
+
+            // If the target table has this column
+            if (target.containsColumn(columnName)) {
+                Column targetColumn = target.column(columnName);
+
+                // If types don't match and need conversion (INTEGER to DOUBLE)
+                if (!sourceColumn.type().equals(targetColumn.type())) {
+                    if (sourceColumn instanceof IntColumn && targetColumn instanceof DoubleColumn) {
+                        // Convert INT to DOUBLE
+                        IntColumn intCol = (IntColumn) sourceColumn;
+                        DoubleColumn doubleCol = DoubleColumn.create(columnName);
+
+                        for (int i = 0; i < intCol.size(); i++) {
+                            if (intCol.isMissing(i)) {
+                                doubleCol.appendMissing();
+                            } else {
+                                doubleCol.append(intCol.get(i));
+                            }
+                        }
+
+                        // Replace the column in our modified source table
+                        modifiedSource.removeColumns(columnName);
+                        modifiedSource.addColumns(doubleCol);
+                    }
+                }
+            }
+        }
+
+        return modifiedSource;
+    }
+
     public static Table createTableMerged(Date startTime, Date endTime, List<Table> tablesInput) {
         long start = new Date().getTime();
         Table output = null;
@@ -171,6 +208,8 @@ public class FileDataUtils {
             } else {
                 output = AddColumnsEmpty(table, output);
                 table = AddColumnsEmpty(output, table);
+                // Ensure column type consistency before appending
+                table = ensureColumnTypeConsistency(table, output);
 
                 output = output.append(table);
             }
@@ -387,17 +426,17 @@ public class FileDataUtils {
     }
 
     public static Depth createDepth(Row row, Instrument instrument, String algorithmInfoDepth) {
-        Depth depth = new Depth();
+        Depth depth = Depth.getInstancePool();
         Map<String, Object> mapToUpdate = getMap(row);
 
         //		Instrument instrument = CSVFileConfiguration.getInstrument();
         int levels = mapToUpdate.size() / 4;
         depth.setInstrument(instrument.getPrimaryKey());
 
-        Double[] asks = new Double[levels];
-        Double[] bids = new Double[levels];
-        Double[] asksQty = new Double[levels];
-        Double[] bidsQty = new Double[levels];
+        double[] asks = new double[levels];
+        double[] bids = new double[levels];
+        double[] asksQty = new double[levels];
+        double[] bidsQty = new double[levels];
         List<String>[] algorithmInfo = new List[levels];
 
         for (int level = 0; level < levels; level++) {
@@ -458,7 +497,7 @@ public class FileDataUtils {
     }
 
     public static Trade createTrade(Row row, Instrument instrument, String algorithmInfo) {
-        Trade trade = new Trade();
+        Trade trade = Trade.getInstancePool();
         Map<String, Object> mapToUpdate = getMap(row);
         trade.setPrice((double) mapToUpdate.get("price"));
         trade.setQuantity((double) mapToUpdate.get("quantity"));

@@ -2,7 +2,6 @@ package com.lambda.investing.algorithmic_trading.factor_investing.executors;
 
 import com.lambda.investing.algorithmic_trading.AlgorithmConnectorConfiguration;
 import com.lambda.investing.algorithmic_trading.TimeServiceIfc;
-import com.lambda.investing.algorithmic_trading.factor_investing.AbstractFactorInvestingAlgorithm;
 import com.lambda.investing.market_data_connector.MarketDataListener;
 import com.lambda.investing.model.asset.Instrument;
 import com.lambda.investing.model.market_data.Depth;

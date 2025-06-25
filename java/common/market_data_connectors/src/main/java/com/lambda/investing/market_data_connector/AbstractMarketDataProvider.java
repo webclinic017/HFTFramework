@@ -50,7 +50,8 @@ public abstract class AbstractMarketDataProvider implements MarketDataProvider {
     }
 
 
-    @Override public void deregister(MarketDataListener listener) {
+    @Override
+    public void deregister(MarketDataListener listener) {
         listenersManager.remove(listener);
     }
 
@@ -58,30 +59,51 @@ public abstract class AbstractMarketDataProvider implements MarketDataProvider {
         if (CHECK_TIMESTAMPS_RECEIVED && depth.getTimestamp() < lastDepthReceived
                 .getOrDefault(depth.getInstrument(), 0L)) {
             //not the last snapshot
+            depth.delete();
             return;
         }
 
         Set<MarketDataListener> listeners = listenersManager.keySet();
-        for (MarketDataListener marketDataListener : listeners) {
-            marketDataListener.onDepthUpdate(depth);
+        if (!listeners.isEmpty()) {
+            try {
+                //if we dont clone the depth reference is modified and the strategy will not work
+                Depth depthCloned = (Depth) depth.clone();//clone to avoid future changes object affects strategy
+                for (MarketDataListener marketDataListener : listeners) {
+                    marketDataListener.onDepthUpdate(depthCloned);
+                }
+            } catch (Exception e) {
+                logger.error("Error notifyDepth depth", e);
+                System.err.println("Error notifyDepth depth");
+                e.printStackTrace();
+            }
         }
-
         lastDepthReceived.put(depth.getInstrument(), depth.getTimestamp());
-
+        depth.delete();
     }
+
 
     public void notifyTrade(Trade trade) {
         if (CHECK_TIMESTAMPS_RECEIVED && trade.getTimestamp() < lastTradeSentReceived
                 .getOrDefault(trade.getInstrument(), 0L)) {
             //not the last snapshot
+            trade.delete();
             return;
         }
         Set<MarketDataListener> listeners = listenersManager.keySet();
-        for (MarketDataListener marketDataListener : listeners) {
-            marketDataListener.onTradeUpdate(trade);
+        if (!listeners.isEmpty()) {
+            try {
+                Trade tradeClone = (Trade) trade.clone();//clone to avoid future changes object affects strategy
+                for (MarketDataListener marketDataListener : listeners) {
+                    marketDataListener.onTradeUpdate(tradeClone);
+                }
+            } catch (Exception e) {
+                logger.error("Error cloning trade", e);
+                System.err.println("Error cloning trade");
+                e.printStackTrace();
+            }
         }
-
         lastTradeSentReceived.put(trade.getInstrument(), trade.getTimestamp());
+        trade.delete();
 
     }
 

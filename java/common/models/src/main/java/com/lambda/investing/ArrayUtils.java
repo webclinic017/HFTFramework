@@ -1,6 +1,7 @@
 package com.lambda.investing;
 
 import com.google.common.collect.Queues;
+import gnu.trove.list.TDoubleList;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -170,7 +171,9 @@ public class ArrayUtils {
 
     public static Double[] DoubleToNonPrimitiveArray(double[] input) {
         Double[] output = new Double[input.length];
-        System.arraycopy(input, 0, output, 0, input.length);
+        for (int i = 0; i < input.length; i++) {
+            output[i] = input[i];
+        }
         return output;
     }
 
@@ -187,6 +190,11 @@ public class ArrayUtils {
 
     public static <T> List<T> ArrayToList(T[] input) {
         return Arrays.stream(input).collect(Collectors.toList());
+    }
+
+    public static TDoubleList ArrayToList(double[] input) {
+        TDoubleList output = new gnu.trove.list.array.TDoubleArrayList(input);
+        return output;
     }
 
     public static List<String> StringArrayList(String[] input) {
@@ -234,7 +242,7 @@ public class ArrayUtils {
         for (Date date : input) {
             boolean found = false;
             for (Date date1 : output) {
-                if (Math.abs(date.getTime() - date1.getTime()) < deltaDiffMs) {
+                if (Math.abs(date.getTime() - date1.getTime()) <= deltaDiffMs) {
                     found = true;
                     break;
                 }

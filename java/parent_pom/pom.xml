@@ -6,7 +6,7 @@
 
     <groupId>com.lambda.investing</groupId>
     <artifactId>parent_pom</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.1-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>Parent Maven POM</name>
@@ -75,6 +75,8 @@
         <intellij.version>232.9921.82</intellij.version>
         <flatlaf.version>3.2.5</flatlaf.version>
         <maven.profiler.version>3.13</maven.profiler.version>
+        <openhft.affinity.version>3.23.3</openhft.affinity.version>
+        <openhft.chroniclequeue.version>5.27ea3</openhft.chroniclequeue.version>
     </properties>
 
 
@@ -481,6 +483,26 @@
                 <version>7.0</version>
             </dependency>
 
+            <!-- chronicle openHFT -->
+            <dependency>
+                <groupId>net.openhft</groupId>
+                <artifactId>affinity</artifactId>
+                <version>${openhft.affinity.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>net.openhft</groupId>
+                <artifactId>chronicle-queue</artifactId>
+                <version>${openhft.chroniclequeue.version}</version>
+            </dependency>
+
+            <!--Primitives list :  TIntArray Trove library provides high speed regular and primitive collections for Java.-->
+            <dependency>
+                <groupId>net.sf.trove4j</groupId>
+                <artifactId>trove4j</artifactId>
+                <version>3.0.3</version>
+            </dependency>
+
 
         </dependencies>
 
@@ -591,6 +613,16 @@
         <!--<artifactId>javax.annotation-api</artifactId>-->
         <!--<version>1.3.2</version>-->
         <!--</dependency>-->
+
+        <dependency>
+            <groupId>net.openhft</groupId>
+            <artifactId>affinity</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>net.sf.trove4j</groupId>
+            <artifactId>trove4j</artifactId>
+        </dependency>
 
     </dependencies>
 

@@ -17,6 +17,10 @@ public class SpreadAction extends AbstractAction {
 				.getValuesPerColumn(this.numberOfDecimals, this.maxSpread, this.minSpread);
 	}
 
+	public int getNumberActionColumnsDifferent() {
+		return COLUMNS.length;
+	}
+
 	public int getNumberActionColumns() {
 		return COLUMNS.length;
 	}

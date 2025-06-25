@@ -17,10 +17,7 @@ import org.apache.commons.lang3.ArrayUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.text.NumberFormat;
-import java.text.ParseException;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -147,7 +144,7 @@ public class BinanceMarketDataPublisher extends AbstractMarketDataConnectorPubli
 				return;
 			}
 
-			Trade tradeToNotify = new Trade();
+			Trade tradeToNotify = Trade.getInstance();
 			tradeToNotify.setInstrument(instrument.getPrimaryKey());
 			//			tradeToNotify.setTimestamp(System.currentTimeMillis());
 			tradeToNotify.setTimestamp(aggTradeEvent.getEventTime());
@@ -178,14 +175,14 @@ public class BinanceMarketDataPublisher extends AbstractMarketDataConnectorPubli
 			if (CHECK_SEND_TIMESTAMP && depthEvent.getEventTime() < lastDepthSentTimestamp) {
 				return;
 			}
-			Depth depth = new Depth();
+			Depth depth = Depth.getInstancePool();
 			depth.setInstrument(instrument.getPrimaryKey());
 			depth.setTimestamp(depthEvent.getEventTime());
 			//			depth.setTimestamp(System.currentTimeMillis());
 			boolean anyError = false;
 			int askDepth = Math.min(depthEvent.getAsks().size(), MAX_DEPTH);
-			Double asks[] = new Double[askDepth];
-			Double askQtys[] = new Double[askDepth];
+            double[] asks = new double[askDepth];
+            double[] askQtys = new double[askDepth];
 			int indexAsk = 0;
 			try {
 				for (OrderBookEntry askEntry : depthEvent.getAsks()) {
@@ -213,8 +210,8 @@ public class BinanceMarketDataPublisher extends AbstractMarketDataConnectorPubli
 			}
 
 			int bidDepth = Math.min(depthEvent.getBids().size(), MAX_DEPTH);
-			Double bids[] = new Double[bidDepth];
-			Double bidQtys[] = new Double[bidDepth];
+            double[] bids = new double[bidDepth];
+            double[] bidQtys = new double[bidDepth];
 			int indexBid = 0;
 			try {
 				for (OrderBookEntry bidEntry : depthEvent.getBids()) {

@@ -8,8 +8,10 @@ import org.apache.curator.shaded.com.google.common.collect.EvictingQueue;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Collection;
+import java.util.Date;
+import java.util.Map;
+import java.util.Queue;
 
 import static com.lambda.investing.algorithmic_trading.Algorithm.EXECUTION_REPORT_LOCK;
 import static com.lambda.investing.algorithmic_trading.QuoteSideManager.MAX_SIZE_LAST_CLORDID_SENT;
@@ -128,7 +130,10 @@ public class QuoteManager implements ExecutionReportListener, Runnable {
             Date nextWakeup = bidQuoteSideManager.getSleepUntil();
             if (nextWakeup == null || nextWakeup.getTime() < algorithm.getCurrentTimestamp()) {
                 bidQuoteSideManager.quoteRequest(this.lastQuoteRequest);
-                lastClOrdIdsSent.addAll(bidQuoteSideManager.getLastClOrdIdSent());
+                Collection<String> bidClOrdIds = bidQuoteSideManager.getLastClOrdIdSent();
+                if (bidClOrdIds != null && !bidClOrdIds.isEmpty()) {
+                    lastClOrdIdsSent.addAll(bidClOrdIds);
+                }
                 lastSleepingBid = false;
             } else {
                 if (!lastSleepingBid) {
@@ -147,7 +152,10 @@ public class QuoteManager implements ExecutionReportListener, Runnable {
             Date nextWakeup = askQuoteSideManager.getSleepUntil();
             if (nextWakeup == null || nextWakeup.getTime() < algorithm.getCurrentTimestamp()) {
                 askQuoteSideManager.quoteRequest(this.lastQuoteRequest);
-                lastClOrdIdsSent.addAll(askQuoteSideManager.getLastClOrdIdSent());
+                Collection<String> askClOrdIds = askQuoteSideManager.getLastClOrdIdSent();
+                if (askClOrdIds != null && !askClOrdIds.isEmpty()) {
+                    lastClOrdIdsSent.addAll(askClOrdIds);
+                }
                 lastSleepingAsk = false;
             } else {
                 if (!lastSleepingAsk) {
